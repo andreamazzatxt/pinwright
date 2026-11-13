@@ -1,0 +1,49 @@
+{
+  "name": "@andreamazza/pinwright",
+  "version": "0.0.0",
+  "description": "Pin feedback on your running site; Claude agents fix it while you keep reviewing.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Andrea Mazza",
+  "bin": {
+    "pinwright": "dist/cli.js"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./vite": "./dist/vite.js",
+    "./astro": "./dist/astro.js"
+  },
+  "files": [
+    "dist",
+    "overlay"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w"
+  },
+  "keywords": [
+    "claude",
+    "agent",
+    "feedback",
+    "overlay",
+    "vite",
+    "astro",
+    "dev-tools"
+  ],
+  "packageManager": "pnpm@10.11.0",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.323",
+    "diff": "^9.0.0",
+    "zod": "^4.6.7"
+  },
+  "optionalDependencies": {
+    "playwright-core": "1.63.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
+  }
+}

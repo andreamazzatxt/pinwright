@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.pinwright/
+.DS_Store
