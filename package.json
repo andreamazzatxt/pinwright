@@ -22,7 +22,9 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc -w"
+    "dev": "tsc -w",
+    "test": "tsc && node --test 'test/*.test.mjs'",
+    "prepublishOnly": "tsc"
   },
   "keywords": [
     "claude",

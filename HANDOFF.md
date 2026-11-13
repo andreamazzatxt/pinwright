@@ -7,8 +7,10 @@ relies on an interactive Claude Code session watching that file with a Monitor. 
 single long session saturates its context. pinwright replaces it with a small daemon that receives notes and
 spawns agents.
 
-Status: **nothing built yet.** Repo scaffolded: package.json, deps installed, Agent SDK smoke test passed.
-Everything below was decided with the user (Andrea) on 2026-11-13.
+Status (2026-11-13): **milestones 1–5 done except publishing**: built, tested (unit tests, fixture site, real
+Vite/Astro), packaged, README written. Dogfooding on a real Astro site
+started (proxy in front of `astro dev`, HMR verified). Everything below was decided with the user (Andrea)
+on 2026-11-13; "Implementation notes" at the end records where the build deviates or adds.
 
 ## Decisions (from the user)
 
@@ -22,7 +24,10 @@ Everything below was decided with the user (Andrea) on 2026-11-13.
 | Parallelism | Scheduler with file locks. A cheap planner (Haiku) predicts which files or areas a note touches. Notes that don't overlap run in parallel in the same working tree. `canUseTool` also enforces the locks at edit time |
 | Review | Edits go straight to the working tree. The overlay shows the diff, before/after screenshots and an **undo** button |
 | Interactive session | The daemon works on its own. Notes too big or ambiguous go to "handoff", and the user pulls them into Claude Code with `pinwright take <id>` |
-| Ambiguity | The agent asks (a `?` on the pin), frees its slot and locks, and the same session resumes (`resume: session_id`) when the user answers |
+| Ambiguity | **Changed 2026-11-13 after dogfooding:** the agent never asks. It picks the likeliest reading, applies it and states the assumption in the summary; the user follows up or undoes. `ask: true` brings back the question flow (`?` pin, resume on answer) |
+| Agent scope | **Changed 2026-11-13 after dogfooding:** the agent doesn't verify. No screenshot or rebuild tools, no Bash, no `check`: it edits and calls note_done; the reviewer validates live. Daemon before/after shots are off by default (`shots: true` brings them back). maxTurns 30. A trivial note now takes ~10 s |
+| Done notes | **Added 2026-11-13:** hidden by default (toggle "Mostra fatte" in the list, per browser); a bottom-right notice appears when a note becomes done/failed/handoff, with summary and tokens · $; click opens the panel. Working pins show three typing dots instead of the number. A click outside closes every open card |
+| Live | **Added 2026-11-13:** the user must see changes while the agent works. Prefer a dev server with HMR as target (ws passes through the proxy); with a rebuild command, it runs after every edit (`rebuildOnEdit`, coalesced) |
 | Lifecycle | Runs with the dev server. While it runs, the listener **must never die**. The queue persists and resumes on restart |
 | Verification | Playwright screenshots before and after, multi-viewport (the note's viewport plus mobile and desktop). The overlay captures the element's outerHTML and computed styles so the agent searches less |
 | Limits | Max parallel agents (default 3). Model per task: Haiku for the planner, a strong model (default sonnet, configurable) for fixes |
@@ -171,3 +176,45 @@ export default {
   Cost of the test: about $0.008.
 - Toolchain: Node 24.14, pnpm 10.11, Claude Code 2.1.323, SDK 0.3.323, TypeScript 7, Google Chrome installed (Playwright `channel: 'chrome'`).
 - Node in node_modules won't strip types, so the package must ship compiled JS (`tsc` → dist).
+
+## Implementation notes (build of 2026-11-13)
+
+- Guard lives in a **PreToolUse hook**, not in `canUseTool`: hooks run even for tools a project's settings
+  auto-allow, so path checks, locks and the undo record can't be bypassed. `canUseTool` just allows what reaches it.
+  No bare `allowedTools` (the SDK warns that they shadow the callback).
+- The bash denylist also blocks `rm/mv/cp/tee/touch`, `sed -i`/`perl -i` and redirects into files, so every edit
+  goes through Edit/Write and stays undoable.
+- PostToolUse hook on edit tools triggers a background rebuild (`rebuildOnEdit`). `note_ask` is registered only with `ask: true`;
+  a note left in `asking` and retried resumes with "don't wait, pick the likeliest reading".
+- The overlay saves scroll, note mode and open panel on every `pagehide` and restores them on a reload of the same
+  page, so HMR full reloads keep the position too.
+- Before shots run while the agent reads; the guard makes its first edit wait for them.
+- Planner is skipped when a note is alone (nothing to parallelize); `models.planner: false` turns it off.
+- Undo: files untouched since go back to `original`; files changed since get the note's patch reversed
+  (context 0); refused only if that doesn't apply.
+- Vite/Astro share one daemon per process with a refcount: dev servers open the new server before closing the
+  old one on restart, so the daemon stops 1.5 s after the last release.
+- API under `/__pw/*` (notes, events SSE, shots, status, overlay.js). Requests from non-localhost origins → 403.
+
+### Tested (fixture site in proxy mode, haiku as worker)
+
+Note → agent → done with summary/diff/before-after shots; live activity on the pin; ask → `pinwright reply` →
+same session resumed; three notes at once (planner put two on different files, ran in parallel); undo,
+double undo, undo across two notes on the same file; `take`/`done`; clean SIGINT stop; Vite plugin lifecycle
+with a simulated dev server (restart keeps the daemon, last close stops it).
+
+### Tested afterwards (same day)
+
+- `pnpm test` (node:test on dist): locks, guard denylist and paths, an edit waiting on another note's lock, undo
+  (restore, created files, reverse patch across notes, refusal on conflict), reply re-queue.
+- Timeout path: with `timeoutMin: 0.05` the note fails after 2 attempts.
+- Real Vite 8 and Astro 7 dev servers (packages linked from an existing local install): daemon starts with the dev
+  server, overlay loads cross-origin with SSE, a note from the UI lands live through HMR, the notice shows; the
+  daemon stops with the dev server (SIGINT for Vite, `astro dev stop` for Astro, which runs detached).
+- Overlay inside an open modal `<dialog>` (a site's contact form).
+- `npm pack --dry-run`: dist, overlay, README, LICENSE, package.json (42 files). Not published.
+
+### Still open
+
+- Dogfooding on a real Astro site is in progress (proxy → `astro dev`).
+- Publishing to npm: only with an explicit yes from the user.

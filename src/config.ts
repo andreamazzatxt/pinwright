@@ -1,0 +1,97 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+
+export interface Viewport {
+  name: string
+  width: number
+  height: number
+}
+
+export interface Config {
+  /** Project root: the agents' working directory and the only place they may edit. */
+  root: string
+  /** Proxy mode: the site to put the overlay in front of. */
+  target?: string
+  /** Where the site itself is reachable, for screenshots. Defaults to `target`; plugins set it from the dev server. */
+  siteUrl?: string
+  port: number
+  host: string
+  /** Shell command run in `root` after edits, when the target has no HMR (proxy mode). */
+  rebuild?: string
+  /** Rebuild right after every edit, so the reviewer sees changes while the agent works. */
+  rebuildOnEdit: boolean
+  /** Let the agent ask the reviewer when a note is ambiguous. Off: it picks the likeliest reading and says so. */
+  ask: boolean
+  maxAgents: number
+  models: { planner: string; worker: string }
+  viewports: Viewport[]
+  maxTurns: number
+  timeoutMin: number
+  lang: string
+  /** Extra text appended to the worker's system prompt. */
+  instructions: string
+  /** Let ANTHROPIC_API_KEY through to the agents. Off by default: they use the `claude login` session. */
+  useApiKey: boolean
+  /** Before/after thumbnails in the panel (Playwright + Chrome). Off by default: the reviewer sees changes live. */
+  shots: boolean
+  /** Who launched the daemon: the CLI installs process-wide handlers, plugins must not. */
+  mode: 'cli' | 'plugin'
+  /** Print what happens. */
+  log: (msg: string) => void
+}
+
+export type Options = Partial<Omit<Config, 'models'>> & { models?: Partial<Config['models']>; config?: string | false }
+
+const DEFAULTS: Omit<Config, 'root' | 'log'> = {
+  port: 4340,
+  host: '127.0.0.1',
+  maxAgents: 3,
+  rebuildOnEdit: true,
+  ask: false,
+  models: { planner: 'haiku', worker: 'sonnet' },
+  viewports: [
+    { name: 'mobile', width: 390, height: 844 },
+    { name: 'desktop', width: 1440, height: 900 },
+  ],
+  maxTurns: 30,
+  timeoutMin: 20,
+  lang: 'it',
+  instructions: '',
+  useApiKey: false,
+  shots: false,
+  mode: 'plugin',
+}
+
+const FILES = ['pinwright.config.mjs', 'pinwright.config.js', 'pinwright.config.json']
+
+async function readFileConfig(root: string, explicit?: string): Promise<Options> {
+  const candidates = explicit ? [resolve(root, explicit)] : FILES.map((f) => join(root, f))
+  for (const file of candidates) {
+    if (!existsSync(file)) continue
+    if (file.endsWith('.json')) return JSON.parse(readFileSync(file, 'utf8'))
+    const mod = await import(`${pathToFileURL(file).href}?t=${Date.now()}`)
+    return (mod.default ?? mod) as Options
+  }
+  if (explicit) throw new Error(`config not found: ${explicit}`)
+  return {}
+}
+
+/** Defaults, then the config file in root, then explicit options (CLI flags, plugin options). */
+export async function loadConfig(opts: Options = {}): Promise<Config> {
+  const root = resolve(opts.root ?? process.cwd())
+  const file = opts.config === false ? {} : await readFileConfig(root, opts.config || undefined)
+  const merged = { ...DEFAULTS, ...strip(file), ...strip(opts) }
+  merged.models = { ...DEFAULTS.models, ...file.models, ...opts.models }
+  const cfg = { ...merged, root, log: opts.log ?? file.log ?? ((m: string) => console.log(`[pinwright] ${m}`)) } as Config
+  cfg.siteUrl ??= cfg.target
+  if (cfg.target) cfg.target = cfg.target.replace(/\/$/, '')
+  if (cfg.siteUrl) cfg.siteUrl = cfg.siteUrl.replace(/\/$/, '')
+  return cfg
+}
+
+function strip<T extends object>(o: T): Partial<T> {
+  const out: Partial<T> = {}
+  for (const [k, v] of Object.entries(o)) if (v !== undefined && k !== 'config') (out as Record<string, unknown>)[k] = v
+  return out
+}
