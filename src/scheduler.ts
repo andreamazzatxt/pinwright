@@ -77,6 +77,7 @@ export class Scheduler {
 
   private schedule(): void {
     const { store, cfg, locks } = this.ctx
+    if (cfg.maxAgents < 1) return
     const queued = store.list(['queued']).filter((n) => n.approved && !this.running.has(n.id) && !this.planning.has(n.id))
     for (const note of queued) {
       if (note.attempts >= MAX_ATTEMPTS) {

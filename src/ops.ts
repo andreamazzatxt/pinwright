@@ -29,14 +29,27 @@ export class Ops {
     return n
   }
 
-  /** An answer to a question, or a follow-up on a finished note: either way the same session resumes. */
-  reply(id: string, text: string): Note {
+  /**
+   * An answer to a question, or a follow-up on a finished note: either way the same session resumes.
+   * `approved: false` (a guest of the review link) holds it until the host approves.
+   */
+  reply(id: string, text: string, author: string | null = null, approved = true, guest = false): Note {
     const n = this.must(id)
     const t = text.trim()
     if (!t) throw new OpError('empty reply')
     if (['working', 'planning'].includes(n.status)) throw new OpError('the agent is still working on this note', 409)
-    this.ctx.store.message(id, 'user', t)
-    return this.ctx.store.update(id, { status: 'queued', attempts: 0 })!
+    this.ctx.store.message(id, 'user', t, author)
+    // Once a guest has written in the thread, the whole note runs under the guest rules.
+    return this.ctx.store.update(id, { status: 'queued', attempts: 0, approved, ...(guest ? { guest: true } : {}) })!
+  }
+
+  /** Lets a note from the review link go to the agents. */
+  approve(id: string): Note {
+    const n = this.must(id)
+    if (n.approved) return n
+    this.ctx.store.message(id, 'system', 'Approved by the host.')
+    this.ctx.cfg.log(`${id}: approved`)
+    return this.ctx.store.update(id, { approved: true })!
   }
 
   archive(id: string): Note {
@@ -44,10 +57,10 @@ export class Ops {
     return this.ctx.store.update(id, { status: 'archived' })!
   }
 
-  retry(id: string): Note {
+  retry(id: string, approved = true): Note {
     const n = this.must(id)
     if (['working', 'planning', 'queued'].includes(n.status)) return n
-    return this.ctx.store.update(id, { status: 'queued', attempts: 0 })!
+    return this.ctx.store.update(id, { status: 'queued', attempts: 0, approved })!
   }
 
   handoff(id: string): Note {

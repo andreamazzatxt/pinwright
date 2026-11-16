@@ -9,27 +9,28 @@
   const BASE = script && script.src ? new URL(script.src).origin : location.origin
   const API = `${BASE}/__pw`
   const CFG = window.__pinwright || {}
-  const LANG = String(CFG.lang || navigator.language || 'en').slice(0, 2) === 'it' ? 'it' : 'en'
+  const LANG = String(CFG.lang || 'en').slice(0, 2) === 'it' ? 'it' : 'en'
   const tokensOf = (t) => (!t ? '0' : t >= 1e6 ? `${(t / 1e6).toFixed(1)}M` : t >= 1e3 ? `${Math.round(t / 1e3)}k` : String(t))
   const T = {
     it: {
-      notes: (n) => `✎ Note (${n})`,
+      notes: (n) => `Note (${n})`,
       waiting: (n) => ` · ${n} da rispondere`,
-      mode: 'Clicca dove vuoi la nota (Esc o ⌥N per uscire)',
-      write: 'Scrivi la nota… (Invio salva, Shift+Invio va a capo)',
+      mode: 'Cosa non va? Cliccalo.',
+      notesN: (n) => `Note ${n}`,
+      write: 'Scrivi la nota…',
       cancel: 'Annulla',
       save: 'Salva',
       close: 'Chiudi',
       del: 'Elimina',
       sure: 'Sicuro? Elimina',
       reply: 'Rispondi',
-      answer: 'Rispondi… (Invio invia, Shift+Invio va a capo)',
-      follow: 'Non proprio… (Invio la rimanda all’agente)',
+      answer: 'Rispondi…',
+      follow: 'Non proprio…',
       send: 'Invia',
       archive: 'Archivia',
       undo: 'Annulla modifica',
       retry: 'Riprova',
-      handoff: 'Passa a mano',
+      handoff: 'Passa a Claude Code',
       changes: (n) => `Modifiche (${n} file)`,
       before: 'Prima',
       after: 'Dopo',
@@ -37,33 +38,54 @@
       agent: 'Claude',
       system: 'pinwright',
       take: (id) => `Da prendere in Claude Code: pinwright take ${id}`,
-      empty: 'Nessuna nota su questa pagina. Premi N (o ⌥N) o il bottone, poi clicca un punto.',
+      empty: 'Nessuna nota. ⌥ + clic o N per aggiungerne.',
+      share: 'Vai live',
+      sharing: 'Apro il link…',
+      shareHint: 'Sito e note con chi ha il link. Max 8 persone.',
+      live: 'Live',
+      minimize: 'Riduci',
+      rename: 'clicca per cambiare nome',
+      expand: 'Espandi',
+      yolo: 'YOLO mode',
+      linkAutoHint: 'Le note partono subito.',
+      linkReviewHint: 'Le note aspettano la tua approvazione.',
+      approve: 'Approva',
+      discard: 'Scarta',
+      awaiting: 'In attesa di approvazione.',
+      reviewHost: 'Parte solo se la approvi.',
+      toApprove: (n) => ` · ${n} da approvare`,
+      copy: 'Copia',
+      copied: 'Copiato',
+      stopShare: 'Interrompi',
+      full: 'Sessione piena (max 8)',
+      here: (n) => `${n} qui`,
       other: 'Su altre pagine',
       showDone: (n) => `Mostra fatte (${n})`,
       hideDone: 'Nascondi fatte',
       offline: 'pinwright non raggiungibile',
       click: 'clicca per aprire',
       cost: (n) => `${n.tokens ? `${tokensOf(n.tokens)} token · ` : ""}$${n.costUsd.toFixed(n.costUsd < 0.01 ? 3 : 2)}`,
-      st: { queued: 'In coda', planning: 'Pianifica', working: 'Ci lavora', done: 'Fatto', asking: 'Domanda', handoff: 'A mano', failed: 'Fallita' },
+      st: { review: 'Da approvare', queued: 'In coda', planning: 'Pianifica', working: 'Ci lavora', done: 'Fatto', asking: 'Domanda', handoff: 'A mano', failed: 'Fallita' },
     },
     en: {
-      notes: (n) => `✎ Notes (${n})`,
+      notes: (n) => `Notes (${n})`,
       waiting: (n) => ` · ${n} to answer`,
-      mode: 'Click where the note goes (Esc or ⌥N to leave)',
-      write: 'Write the note… (Enter saves, Shift+Enter new line)',
+      mode: 'What’s off? Click it.',
+      notesN: (n) => `Notes ${n}`,
+      write: 'Write the note…',
       cancel: 'Cancel',
       save: 'Save',
       close: 'Close',
       del: 'Delete',
       sure: 'Sure? Delete',
       reply: 'Reply',
-      answer: 'Answer… (Enter sends, Shift+Enter new line)',
-      follow: 'Not quite… (Enter sends it back to the agent)',
+      answer: 'Answer…',
+      follow: 'Not quite…',
       send: 'Send',
       archive: 'Archive',
       undo: 'Undo change',
       retry: 'Retry',
-      handoff: 'Hand off',
+      handoff: 'Hand off to Claude Code',
       changes: (n) => `Changes (${n} file${n === 1 ? '' : 's'})`,
       before: 'Before',
       after: 'After',
@@ -71,41 +93,137 @@
       agent: 'Claude',
       system: 'pinwright',
       take: (id) => `Take it in Claude Code: pinwright take ${id}`,
-      empty: 'No notes on this page. Press N (or ⌥N) or the button, then click a spot.',
+      empty: 'No notes. ⌥ + click or N to add one.',
+      share: 'Go live',
+      sharing: 'Opening the link…',
+      shareHint: 'Site and notes, for whoever has the link. Max 8 people.',
+      live: 'Live',
+      minimize: 'Minimize',
+      rename: 'click to change your name',
+      expand: 'Expand',
+      yolo: 'YOLO mode',
+      linkAutoHint: 'Notes run right away.',
+      linkReviewHint: 'Notes wait for your approval.',
+      approve: 'Approve',
+      discard: 'Discard',
+      awaiting: 'Waiting for approval.',
+      reviewHost: 'Runs only once you approve it.',
+      toApprove: (n) => ` · ${n} to approve`,
+      copy: 'Copy',
+      copied: 'Copied',
+      stopShare: 'Stop',
+      full: 'Session full (max 8)',
+      here: (n) => `${n} here`,
       other: 'On other pages',
       showDone: (n) => `Show done (${n})`,
       hideDone: 'Hide done',
       offline: 'pinwright not reachable',
       click: 'click to open',
       cost: (n) => `${n.tokens ? `${tokensOf(n.tokens)} tokens · ` : ""}$${n.costUsd.toFixed(n.costUsd < 0.01 ? 3 : 2)}`,
-      st: { queued: 'Queued', planning: 'Planning', working: 'Working', done: 'Done', asking: 'Question', handoff: 'Hand off', failed: 'Failed' },
+      st: { review: 'To approve', queued: 'Queued', planning: 'Planning', working: 'Working', done: 'Done', asking: 'Question', handoff: 'Hand off', failed: 'Failed' },
     },
   }[LANG]
 
   const css = `
   *{box-sizing:border-box}
-  .ui{pointer-events:auto;font:14px/1.45 system-ui,-apple-system,sans-serif;color:#121318;letter-spacing:normal;text-transform:none;text-align:left}
+  .ui{pointer-events:auto;cursor:default;font:14px/1.45 system-ui,-apple-system,sans-serif;color:#121318;letter-spacing:normal;text-transform:none;text-align:left}
   button{font:700 13px system-ui,-apple-system,sans-serif;cursor:pointer}
-  .btn{position:fixed;right:16px;bottom:16px;display:flex;gap:8px;align-items:center;padding:12px 16px;border:0;border-radius:999px;background:#ff3b6b;color:#fff;font-size:14px;box-shadow:0 10px 30px rgb(0 0 0/.3)}
-  .btn[data-on]{background:#121318;outline:3px solid #ff3b6b}
-  .btn[data-off]{background:#8a8f9c}
-  .list{position:fixed;right:16px;bottom:72px;width:340px;max-height:55vh;overflow:auto;padding:10px;border-radius:16px;background:#fff;box-shadow:0 20px 50px rgb(0 0 0/.3)}
-  .list[hidden]{display:none}
+  button.ui{cursor:pointer}
+  input,textarea{cursor:text}
+  .dock{position:fixed;right:16px;bottom:16px;display:flex;gap:8px;align-items:flex-end}
+  .dock .people{align-self:flex-end;padding-bottom:7px}
+  .people{display:flex}
+  .people span{display:grid;place-items:center;width:30px;height:30px;margin-left:-6px;border:2px solid #fff;border-radius:50%;background:var(--pc);color:#fff;font:800 11px system-ui,sans-serif;box-shadow:0 4px 12px rgb(0 0 0/.2)}
+  .people span.me{cursor:pointer;outline:2px solid var(--pc);outline-offset:1px}
+  /* The hub: a pill when closed, the dark notes card when open; one element, morphing between the two. */
+  .hub{position:relative;display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;border-radius:22px;background:#ff3b6b;color:#fff;box-shadow:0 10px 30px rgb(0 0 0/.3);transition:width .34s cubic-bezier(.2,.8,.2,1),height .34s cubic-bezier(.2,.8,.2,1),border-radius .34s ease,background-color .34s ease}
+  .hub[data-on],.hub[data-open]{background:#121318}
+  .hub[data-open]{border-radius:16px}
+  .hub[data-on]:not([data-open]){outline:3px solid #ff3b6b}
+  .hub[data-off]{background:#8a8f9c}
+  .hub[data-morph]{overflow:hidden}
+  .hub[data-yolo]::before{content:"";position:absolute;inset:-2px;padding:2px;border-radius:inherit;background:conic-gradient(from var(--a,0deg),#ff3b6b,#f59e0b,#16a34a,#12a9c8,#7a5cff,#db2777,#ff3b6b);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+  .hub[data-yolo]::after{content:"";position:absolute;inset:-2px;padding:2px;border-radius:inherit;background:radial-gradient(circle 70px at var(--mx,50%) var(--my,50%),#fff,transparent 70%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
+  .face{display:flex;align-items:center;gap:8px;padding:12px 16px;white-space:nowrap;font:700 14px system-ui,-apple-system,sans-serif;cursor:pointer;animation:fade .2s ease .1s both}
+  .face[hidden],.list[hidden],.toasts[hidden]{display:none}
+  .face .n{display:grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:rgb(255 255 255/.25);font-size:11px}
+  .face .n.q{background:#12a9c8}
+  .face .n.a{background:#b45309}
+  .face .lv{display:flex;align-items:center;gap:6px;padding-left:8px;border-left:1px solid rgb(255 255 255/.3);font-size:12px}
+  .face .lv i{width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 3px rgb(74 222 128/.25)}
+  .face .lv button{display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background:rgb(255 255 255/.18);color:#fff}
+  .face .lv svg{width:12px;height:12px}
+  @keyframes fade{from{opacity:0}}
+  kbd{margin-left:8px;padding:1px 6px;border:1px solid rgb(255 255 255/.25);border-radius:5px;font:600 10px ui-monospace,monospace;color:rgb(255 255 255/.6);vertical-align:1px}
+  .list{width:340px;max-height:60vh;overflow:auto;padding:6px 10px 10px;color:#e8e9ee;animation:fade .2s ease .12s both}
+  .list .bar{display:flex;align-items:center;gap:8px;margin:2px 0 6px;padding:6px 4px 6px 6px;font-size:12px;font-weight:600;color:#a3a8b5}
+  .list .bar span{flex:1}
+  .list .bar button{display:grid;place-items:center;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:none;color:#a3a8b5;font-size:16px;line-height:1}
+  .list .bar button:hover{background:#2a2d36;color:#fff}
   .list ol{margin:0;padding:0}
   .list li{display:flex;gap:8px;align-items:flex-start;padding:8px;border-radius:10px;list-style:none;cursor:pointer}
-  .list li:hover{background:#f1f2f5}
+  .list li:hover{background:#1f2129}
   .list li b{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--c);color:#fff;font-size:12px}
+  .list li small{filter:brightness(1.35)}
   .list li span{flex:1;white-space:pre-wrap;overflow-wrap:anywhere}
   .list li small{flex:none;color:var(--c);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding-top:3px}
   .list h4{margin:10px 8px 4px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#8a8f9c}
   .list p{margin:6px}
   .list em.cost{display:block;margin-top:2px;font-style:normal;color:#8a8f9c;font-size:12px}
-  .list .toggle{display:block;margin:8px 6px 2px;padding:0;border:0;background:none;color:#5f6474;font-size:12px;text-decoration:underline}
+  .share{margin:0 0 8px;padding:10px;border-radius:10px;background:#1c1e25}
+  .share p{margin:0 0 8px;color:#a3a8b5;font-size:12px}
+  .share input{width:100%;padding:6px 8px;border:1px solid #2a2d36;border-radius:6px;font:12px ui-monospace,monospace;color:#d6d8de;background:#0f1117}
+  .share .row{margin-top:6px}
+  .share .sw{display:flex;align-items:center;gap:8px;margin:0 0 4px;padding:0;border:0;background:none;color:#fff;font-size:13px;text-align:left}
+  .share .sw i{flex:none;position:relative;width:30px;height:18px;border-radius:999px;background:#3a3d47;transition:background .15s}
+  .share .sw i::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgb(0 0 0/.3);transition:translate .15s}
+  .share .sw[aria-checked="true"] i{background:linear-gradient(90deg,#ff3b6b,#f59e0b,#16a34a,#12a9c8,#7a5cff,#db2777,#ff3b6b) 0 0/300% 100%;animation:flow 2.4s linear infinite}
+  @keyframes flow{to{background-position:300% 0}}
+  @media (prefers-reduced-motion:reduce){.share .sw[aria-checked="true"] i{animation:none}}
+  .card.namecard{display:flex;gap:6px;width:260px;padding:8px;border-radius:12px}
+  .namecard input{flex:1;min-width:0;padding:6px 8px;border:1px solid #d6d8de;border-radius:8px;font:14px system-ui,sans-serif;color:#121318}
+  .namecard button{flex:none;padding:6px 12px;border:0;border-radius:999px;background:#121318;color:#fff}
+  button.ib{position:relative;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:50%;background:#eef1f5;color:#121318}
+  button.ib svg{width:16px;height:16px}
+  button.ib.ok{background:#121318;color:#fff}
+  button.ib.del{background:none;color:#c4243f}
+  button.ib.del[data-sure]{background:#c4243f;color:#fff}
+  button.ib.flat{width:26px;height:26px;background:none;color:#5f6474}
+  button.ib.flat:hover{background:#e3e5ea}
+  button.ib.sm{width:24px;height:24px}
+  button.ib.sm svg{width:13px;height:13px}
+  button.ib[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);right:0;padding:4px 8px;border-radius:6px;background:#121318;color:#fff;font:600 11px system-ui,sans-serif;white-space:nowrap;pointer-events:none;z-index:2}
+  button.ib.del[data-tip]:hover::after{right:auto;left:0}
+  .share .top button.ib[data-tip]:hover::after{bottom:auto;top:calc(100% + 6px)}
+  .list button.ib.ok{background:#fff;color:#121318}
+  .list button.ib.flat{color:#a3a8b5}
+  .list button.ib.flat:hover{background:#2a2d36;color:#fff}
+  .list button.ib[data-tip]:hover::after{background:#fff;color:#121318}
+  .list .err{color:#ff6b81}
+  .share .top{display:flex;align-items:center;gap:8px;margin:0 0 6px}
+  .share .top b{flex:1;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#a3a8b5}
+  .share .top{gap:2px}
+
+  .share .sw[aria-checked="true"] i::after{translate:12px 0}
+  .share small{display:block;margin:0 0 8px 38px;color:#a3a8b5;font-size:11px}
+  .share .link{display:flex;gap:6px}
+  .share .link input{flex:1;min-width:0}
+  .cursor{position:fixed;left:0;top:0;pointer-events:none;transition:transform .08s linear;will-change:transform}
+  .cursor svg{display:block;filter:drop-shadow(0 1px 2px rgb(0 0 0/.35))}
+  .cursor b{position:absolute;left:14px;top:16px;padding:2px 7px;border-radius:999px;background:var(--pc);color:#fff;font:700 11px system-ui,sans-serif;white-space:nowrap}
+  .list .toggle{display:block;padding:0;border:0;background:none;color:#a3a8b5;font-size:12px;text-decoration:underline}
+  .list .foot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:8px 6px 2px}
+  .list .live{display:flex;align-items:center;gap:6px;padding:5px 10px 5px 8px;border:0;border-radius:999px;background:#24262e;color:#fff;font-size:12px}
+  .list .live:hover{background:#2f323b}
+  .list .live svg{width:14px;height:14px}
+  .list .live[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);right:0;padding:4px 8px;border-radius:6px;background:#fff;color:#121318;font:600 11px system-ui,sans-serif;white-space:nowrap;pointer-events:none}
+  .list .live{position:relative}
   .hl{position:fixed;pointer-events:none;outline:2px dashed #ff3b6b;outline-offset:2px;border-radius:2px;display:none}
   .pin{position:fixed;display:grid;place-items:center;width:28px;height:28px;margin:-28px 0 0 0;border-radius:50% 50% 50% 0;background:var(--c);color:#fff;font:800 13px system-ui,sans-serif;box-shadow:0 4px 12px rgb(0 0 0/.35);cursor:pointer;transform:rotate(-45deg);transform-origin:0 100%}
   .pin i{font-style:normal;transform:rotate(45deg)}
   .pin:hover::after{content:attr(data-text);position:absolute;left:34px;top:0;width:max-content;max-width:280px;padding:8px 10px;border-radius:10px;background:#121318;color:#fff;font:500 13px/1.35 system-ui,sans-serif;white-space:pre-wrap;transform:rotate(45deg);transform-origin:0 0}
   .s-queued{--c:#ff3b6b}
+  .s-review{--c:#b45309}
   .s-planning,.s-working{--c:#7a5cff}
   .s-asking{--c:#12a9c8}
   .s-done{--c:#16a34a}
@@ -155,13 +273,13 @@
   .shots img{display:block;width:100%;height:150px;object-fit:cover;object-position:top}
   .cost{color:#8a8f9c;font-size:11px;margin-top:6px;text-align:right}
   .toasts{position:fixed;right:16px;bottom:72px;display:flex;flex-direction:column;gap:8px;width:340px}
-  .toast{position:relative;padding:10px 32px 10px 14px;border-radius:12px;border-left:5px solid var(--c);background:#fff;box-shadow:0 12px 32px rgb(0 0 0/.25);cursor:pointer;animation:toast-in .2s ease-out}
+  .toast{position:relative;padding:10px 32px 10px 14px;border-radius:12px;border:2px solid var(--c);background:#fff;box-shadow:0 12px 32px rgb(0 0 0/.25);cursor:pointer;animation:toast-in .2s ease-out}
   .toast b{display:block;color:var(--c);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
   .toast p{margin:2px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
   .toast small{display:block;margin-top:4px;color:#8a8f9c;font-size:12px}
   .toast button{position:absolute;top:6px;right:8px;border:0;background:none;color:#8a8f9c;font-size:16px;line-height:1}
   @keyframes toast-in{from{opacity:0;translate:0 8px}}
-  .list:not([hidden]) ~ .toasts{display:none}`
+`
 
   // --- host: one element, in the top layer so it stays above (and usable over) a modal dialog.
   const host = document.createElement('pinwright-root')
@@ -202,6 +320,49 @@
     return el
   }
 
+  const ICONS = {
+    copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+    check: '<path d="M20 6 9 17l-5-5"/>',
+    minus: '<path d="M5 12h14"/>',
+    power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+    trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+    undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-4"/>',
+    archive: '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+    retry: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
+    terminal: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+    send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  }
+  const svg = (name) => {
+    const t = document.createElement('template')
+    t.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`
+    return t.content.firstChild
+  }
+  /** An icon button; what it does shows on hover (and to screen readers). */
+  const ib = (name, tip, onclick, cls = '') => {
+    const b = h(`button.ib${cls}`, { 'data-tip': tip, 'aria-label': tip, onclick }, svg(name))
+    b.setIcon = (n) => b.replaceChildren(svg(n))
+    return b
+  }
+  /** Copies, then shows a tick for a moment. */
+  const copyIb = (getText, cls = '') => {
+    const b = ib(
+      'copy',
+      T.copy,
+      async (e) => {
+        e.stopPropagation()
+        try {
+          await navigator.clipboard.writeText(getText())
+        } catch {}
+        b.setIcon('check')
+        b.dataset.tip = T.copied
+        setTimeout(() => (b.setIcon('copy'), (b.dataset.tip = T.copy)), 1500)
+      },
+      cls,
+    )
+    return b
+  }
+
   const page = location.pathname
   const VISIBLE = ['queued', 'planning', 'working', 'done', 'asking', 'handoff', 'failed']
   let notes = []
@@ -216,16 +377,54 @@
   } catch {}
   const shown = (n) => showDone || n.status !== 'done'
   let online = true
+  // Live session: me, the others (max 8 people), their cursors, the share link (host only).
+  let pid = null
+  try {
+    pid = sessionStorage.getItem('pw-pid')
+    if (!pid) sessionStorage.setItem('pw-pid', (pid = Math.random().toString(36).slice(2, 12)))
+  } catch {
+    pid = Math.random().toString(36).slice(2, 12)
+  }
+  let me = null
+  let full = false
+  let peers = []
+  let shareLinks = null
+  // Which of the two links the share box shows: the one that waits for my approval, unless YOLO mode is on.
+  // YOLO is a per-moment choice: every page load starts with it off.
+  let yolo = false
+
+  let access = 'host'
+  let sharing = false
+  const cursors = new Map()
+  // Holding ⌥ is a temporary note mode.
+  let held = false
+  const active = () => on || held
 
   const hl = h('div.hl')
-  const btn = h('button.btn.ui')
-  const list = h('div.list.ui', { hidden: true })
+  const face = h('div.face')
+  const list = h('div.list', { hidden: true })
+  const hub = h('div.hub.ui', {}, list, face)
+  let isOpen = false
+  const people = h('div.people.ui')
+  const dock = h('div.dock', {}, people, hub)
   const pins = h('div')
+  const cursorLayer = h('div')
   const toasts = h('div.toasts')
-  root.append(hl, pins, list, toasts, btn)
+  root.append(hl, pins, cursorLayer, toasts, dock)
+
+  // The page's own cursor during note mode: a pin in my colour, tip on the hotspot. Needs a light-DOM rule.
+  const modeStyle = document.createElement('style')
+  document.head.append(modeStyle)
+  function modeCursor() {
+    const c = (me && me.color) || '#ff3b6b'
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'><path d='M2 24V13A11 11 0 1 1 13 24Z' fill='${c}' stroke='white' stroke-width='2'/></svg>`
+    // Our own cards keep the normal cursor: the pin is only for the page.
+    modeStyle.textContent = `html[data-pw-mode],html[data-pw-mode] *{cursor:url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 24,crosshair!important}html[data-pw-mode] pinwright-root{cursor:default!important}`
+  }
+  modeCursor()
 
   const api = async (path, opts = {}) => {
-    const r = await fetch(API + path, { ...opts, headers: { 'content-type': 'application/json' }, body: opts.body ? JSON.stringify(opts.body) : undefined })
+    const r = await fetch(API + path, { ...opts, credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: opts.body ? JSON.stringify(opts.body) : undefined })
     const data = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(data.error || r.statusText)
     return data
@@ -275,6 +474,8 @@
     }
   }
   const busy = (n) => n.status === 'working' || n.status === 'planning'
+  /** A queued note from the review link shows as waiting for approval. */
+  const stOf = (n) => (n.status === 'queued' && n.approved === false ? 'review' : n.status)
   const short = (s, n = 140) => (s.length > n ? `${s.slice(0, n)}…` : s)
 
   /** Pins sit on their element, in viewport coordinates: set again on scroll, resize and layout shifts. */
@@ -317,19 +518,25 @@
     const ns = all.filter(shown)
     const open = all.filter((n) => n.status !== 'done').length
     const waiting = all.filter((n) => n.status === 'asking').length
-    btn.textContent = !online ? T.offline : on ? T.mode : T.notes(open) + (waiting ? T.waiting(waiting) : '')
-    btn.toggleAttribute('data-on', on)
-    btn.toggleAttribute('data-off', !online)
+    const toApprove = access === 'host' ? visible().filter((n) => stOf(n) === 'review').length : 0
+    renderFace(open, waiting, toApprove)
+    document.documentElement.toggleAttribute('data-pw-mode', active())
+    renderPeople()
+    hub.toggleAttribute('data-on', on)
+    hub.toggleAttribute('data-open', isOpen)
+    hub.toggleAttribute('data-off', !online)
+    hub.toggleAttribute('data-yolo', Boolean(shareLinks && yolo && me && !me.guest))
+    toasts.hidden = isOpen
     // Pins are rebuilt only when what they show changed, so one never vanishes under the pointer.
-    const sig = JSON.stringify(ns.map((n) => [n.id, n.status, n.text, activity[n.id]]))
+    const sig = JSON.stringify(ns.map((n) => [n.id, stOf(n), n.text, activity[n.id]]))
     if (pins.dataset.sig !== sig) {
       pins.dataset.sig = sig
       pins.replaceChildren(
         ...ns.map((n) => {
           const i = all.indexOf(n)
           const act = activity[n.id]
-          const tip = `${T.st[n.status]}${act ? ` · ${act}` : ''}\n\n${short(n.text, 200)}\n\n(${T.click})`
-          return h(`div.pin.ui.s-${n.status}`, { 'data-id': n.id, 'data-text': tip, onclick: (e) => (e.stopPropagation(), openPanel(n.id)) }, busy(n) ? h('i.dots', {}, h('b'), h('b'), h('b')) : h('i', { text: String(i + 1) }))
+          const tip = `${T.st[stOf(n)]}${act ? ` · ${act}` : ''}\n\n${short(n.text, 200)}\n\n(${T.click})`
+          return h(`div.pin.ui.s-${stOf(n)}`, { 'data-id': n.id, 'data-text': tip, onclick: (e) => (e.stopPropagation(), openPanel(n.id)) }, busy(n) ? h('i.dots', {}, h('b'), h('b'), h('b')) : h('i', { text: String(i + 1) }))
         }),
       )
     }
@@ -337,15 +544,82 @@
     renderList()
   }
 
+  /** The closed hub: the count, what waits for me, and the live state with a copy button. */
+  function renderFace(open, waiting, toApprove) {
+    const live = shareLinks && me && !me.guest
+    const sig = JSON.stringify([full, online, on, open, waiting, toApprove, live && yolo, live && shareLinks.auto])
+    if (face.dataset.sig === sig) return
+    face.dataset.sig = sig
+    if (full || !online) return void face.replaceChildren(full ? T.full : T.offline)
+    if (on) return void face.replaceChildren(T.mode, h('kbd', { text: 'esc' }))
+    const url = () => (yolo ? shareLinks.auto : shareLinks.review)
+    const copy = live
+      ? h(
+          'button',
+          {
+            title: T.copy,
+            'aria-label': T.copy,
+            onclick: async (e) => {
+              e.stopPropagation()
+              try {
+                await navigator.clipboard.writeText(url())
+              } catch {}
+              copy.replaceChildren(svg('check'))
+              setTimeout(() => copy.replaceChildren(svg('copy')), 1500)
+            },
+          },
+          svg('copy'),
+        )
+      : null
+    // replaceChildren would print a null as the text "null".
+    face.replaceChildren(
+      ...[
+        T.notesN(open),
+        waiting ? h('span.n.q', { text: String(waiting), title: T.waiting(waiting).replace(' · ', '') }) : null,
+        toApprove ? h('span.n.a', { text: String(toApprove), title: T.toApprove(toApprove).replace(' · ', '') }) : null,
+        live ? h('span.lv', {}, h('i'), yolo ? 'YOLO' : T.live, copy) : null,
+      ].filter(Boolean),
+    )
+  }
+
+  /** Opens or closes the hub, morphing size, corners and colour from one state to the other. */
+  function setOpen(v) {
+    if (v === isOpen) return
+    const from = hub.getBoundingClientRect()
+    isOpen = v
+    list.hidden = !v
+    face.hidden = v
+    render()
+    hub.style.width = ''
+    hub.style.height = ''
+    const to = hub.getBoundingClientRect()
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    hub.setAttribute('data-morph', '')
+    // Back to the old size without animating it (colour and corners keep transitioning), then grow to the new one.
+    hub.style.transitionProperty = 'background-color,border-radius'
+    hub.style.width = `${from.width}px`
+    hub.style.height = `${from.height}px`
+    hub.offsetWidth
+    hub.style.transitionProperty = ''
+    hub.style.width = `${to.width}px`
+    hub.style.height = `${to.height}px`
+    clearTimeout(hub.morphTimer)
+    hub.morphTimer = setTimeout(() => {
+      hub.removeAttribute('data-morph')
+      hub.style.width = ''
+      hub.style.height = ''
+    }, 380)
+  }
+
   function renderList() {
-    if (list.hidden) return
+    if (!isOpen) return
     const all = mine()
     const ns = all.filter(shown)
     const others = visible().filter((n) => n.page !== page && shown(n))
     const done = visible().filter((n) => n.status === 'done').length
     const item = (n, i, here) =>
       h(
-        `li.s-${n.status}`,
+        `li.s-${stOf(n)}`,
         { onclick: () => (here ? focusPin(n.id) : (location.href = n.page)) },
         h('b', { text: here ? String(i + 1) : '•' }),
         h(
@@ -354,12 +628,23 @@
           here ? short(n.text) : `${n.page}  ${short(n.text, 80)}`,
           n.status === 'done' && n.costUsd ? h('em.cost', { text: T.cost(n) }) : null,
         ),
-        h('small', { text: T.st[n.status] }),
+        h('small', { text: T.st[stOf(n)] }),
       )
+    const bar = h(
+      'div.bar',
+      {},
+      h('span', {}, on ? [T.mode, h('kbd', { text: 'esc' })] : T.notesN(all.filter((n) => n.status !== 'done').length)),
+      h('button', { text: '×', title: T.close, 'aria-label': T.close, onclick: (e) => (e.stopPropagation(), setOn(false), setOpen(false)) }),
+    )
     const parts = [
-      ns.length ? h('ol', {}, ns.map((n) => item(n, all.indexOf(n), true))) : h('p', { text: T.empty }),
+      bar,
+      shareBox(),
+      ns.length ? h('ol', {}, ns.map((n) => item(n, all.indexOf(n), true))) : null,
       others.length ? [h('h4', { text: T.other }), h('ol', {}, others.map((n, i) => item(n, i, false)))] : null,
-      done || showDone
+      h(
+        'div.foot',
+        {},
+        done || showDone
         ? h('button.toggle', {
             text: showDone ? T.hideDone : T.showDone(done),
             onclick: (e) => {
@@ -372,11 +657,259 @@
               render()
             },
           })
-        : null,
+        : h('span'),
+        goLive(),
+      ),
     ]
     // replaceChildren would print a null as the text "null".
     list.replaceChildren(...parts.flat().filter(Boolean))
   }
+
+  function initials(name) {
+    return name
+      .split(' ')
+      .map((w) => w[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase()
+  }
+  function renderPeople() {
+    const sig = JSON.stringify(peers.map((p) => [p.id, p.name]))
+    if (people.dataset.sig === sig) return
+    people.dataset.sig = sig
+    // Alone, nothing to show.
+    const ps = peers.length > 1 ? peers : []
+    people.replaceChildren(
+      ...ps.map((p) => {
+        const mine = p.id === pid
+        const chip = h(mine ? 'span.me' : 'span', {
+          title: mine ? `${p.name} (${T.you}) · ${T.rename}` : p.name,
+          text: initials(p.name),
+          onclick: mine ? (e) => (e.stopPropagation(), nameCard(chip)) : undefined,
+        })
+        chip.style.setProperty('--pc', p.color)
+        return chip
+      }),
+    )
+  }
+
+  // The YOLO border follows the pointer: the colours turn towards it and a highlight sits where it's nearest.
+  let glowFrame = 0
+  let lastMove = null
+  addEventListener(
+    'pointermove',
+    (ev) => {
+      lastMove = ev
+      if (glowFrame) return
+      glowFrame = requestAnimationFrame(() => {
+        glowFrame = 0
+        const e = lastMove
+        const box = hub.hasAttribute('data-yolo') ? hub : null
+        if (!box) return
+        const r = box.getBoundingClientRect()
+        const a = (Math.atan2(e.clientY - (r.top + r.height / 2), e.clientX - (r.left + r.width / 2)) * 180) / Math.PI + 90
+        box.style.setProperty('--a', `${a}deg`)
+        box.style.setProperty('--mx', `${Math.max(0, Math.min(r.width, e.clientX - r.left)) + 2}px`)
+        box.style.setProperty('--my', `${Math.max(0, Math.min(r.height, e.clientY - r.top)) + 2}px`)
+      })
+    },
+    { passive: true },
+  )
+
+  /** A small card above my chip to choose my name; it sticks in this browser. */
+  function nameCard(chip) {
+    root.querySelector('.namecard')?.remove()
+    const save = () => {
+      const name = input.value.replace(/\s+/g, ' ').trim().slice(0, 30)
+      card.remove()
+      if (!name || !ws || ws.readyState !== 1) return
+      try {
+        localStorage.setItem('pw-name', name)
+      } catch {}
+      ws.send(JSON.stringify({ t: 'name', name }))
+    }
+    const input = h('input', {
+      value: me ? me.name : '',
+      maxLength: 30,
+      onkeydown: (e) => {
+        e.stopPropagation()
+        if (e.key === 'Enter') save()
+        if (e.key === 'Escape') card.remove()
+      },
+    })
+    const card = h('div.card.namecard.ui', { onclick: (e) => e.stopPropagation() }, input, h('button', { text: T.save, onclick: save }))
+    root.append(card)
+    const r = chip.getBoundingClientRect()
+    card.style.left = `${Math.max(8, Math.min(r.left, innerWidth - card.offsetWidth - 8))}px`
+    card.style.top = `${r.top - card.offsetHeight - 8}px`
+    input.focus()
+    input.select()
+  }
+
+  /** The host's two links to the live session, in the list. Guests don't get them. */
+  let shareError = null
+  async function startShare() {
+    if (sharing) return
+    sharing = true
+    shareError = null
+    render()
+    try {
+      const r = await api('/share', { method: 'POST', body: { page: location.pathname + location.search } })
+      shareLinks = r.links
+    } catch (err) {
+      shareError = err.message
+      setOpen(true)
+    } finally {
+      sharing = false
+      render()
+    }
+  }
+
+  /** Off: just a small button at the bottom of the list. */
+  function goLive() {
+    if (!me || me.guest || shareLinks) return null
+    return h('button.live', { 'data-tip': T.shareHint, disabled: sharing, onclick: (e) => (e.stopPropagation(), startShare()) }, svg('link'), sharing ? T.sharing : T.share)
+  }
+
+  function shareBox() {
+    if (!me || me.guest) return null
+    if (!shareLinks) return shareError ? h('p.err', { text: shareError }) : null
+    const url = yolo ? shareLinks.auto : shareLinks.review
+    const input = h('input', { value: url, readOnly: true, onclick: (e) => (e.stopPropagation(), e.target.select()) })
+    const stop = ib(
+      'power',
+      T.stopShare,
+      async (e) => {
+        e.stopPropagation()
+        await api('/share', { method: 'DELETE' }).catch(() => {})
+        shareLinks = null
+        render()
+      },
+      '.flat',
+    )
+    const top = h('div.top', {}, h('b', { text: yolo ? `${T.live} · YOLO` : T.live }), stop)
+    const toggle = h(
+      'button.sw',
+      {
+        role: 'switch',
+        'aria-checked': String(yolo),
+        onclick: (e) => {
+          e.stopPropagation()
+          yolo = !yolo
+          render()
+        },
+      },
+      h('i'),
+      T.yolo,
+    )
+    return h(
+      'div.share',
+      {},
+      top,
+      toggle,
+      h('small', { text: yolo ? T.linkAutoHint : T.linkReviewHint }),
+      h('div.link', {}, input, copyIb(() => url, '.ok')),
+    )
+  }
+  function alertIn(box, msg) {
+    box.querySelector('.err')?.remove()
+    box.prepend(h('p.err', { text: msg }))
+  }
+
+  // --- cursors: mine goes out (throttled) anchored to the element under it; the others' come in.
+  let lastPointer = null
+  let sendTimer = null
+  let lastSent = 0
+  function cursorPayload(hidden) {
+    if (hidden || !lastPointer) return { pid, page, hidden: true }
+    const { x, y } = lastPointer
+    const el = document.elementFromPoint(x, y)
+    const d = { pid, page, x: x / innerWidth, y: y + scrollY, hidden: false }
+    if (el && el !== host && el !== document.documentElement && el !== document.body) {
+      const r = el.getBoundingClientRect()
+      if (r.width && r.height) Object.assign(d, { sel: sel(el), fx: (x - r.left) / r.width, fy: (y - r.top) / r.height })
+    }
+    return d
+  }
+  function sendCursor(hidden = false) {
+    if (!me || peers.length < 2) return
+    const go = () => {
+      sendTimer = null
+      lastSent = Date.now()
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'cursor', ...cursorPayload(hidden) }))
+    }
+    if (hidden) return go()
+    if (sendTimer) return
+    sendTimer = setTimeout(go, Math.max(0, 60 - (Date.now() - lastSent)))
+  }
+  addEventListener(
+    'pointermove',
+    (e) => {
+      lastPointer = { x: e.clientX, y: e.clientY }
+      sendCursor()
+      if (held && !fromUs(e)) highlight(e.target)
+    },
+    { passive: true, capture: true },
+  )
+  document.addEventListener('pointerleave', () => sendCursor(true))
+  addEventListener('blur', () => {
+    held = false
+    render()
+  })
+
+  function arrow(color) {
+    const ns = 'http://www.w3.org/2000/svg'
+    const svg = document.createElementNS(ns, 'svg')
+    svg.setAttribute('width', '18')
+    svg.setAttribute('height', '22')
+    svg.setAttribute('viewBox', '0 0 18 22')
+    const path = document.createElementNS(ns, 'path')
+    path.setAttribute('d', 'M1 1v17l4.5-4.2 3.2 7.2 3-1.3-3.2-7H15z')
+    path.setAttribute('fill', color)
+    path.setAttribute('stroke', '#fff')
+    path.setAttribute('stroke-width', '1.5')
+    path.setAttribute('stroke-linejoin', 'round')
+    svg.append(path)
+    return svg
+  }
+  function placeCursors() {
+    for (const [id, c] of cursors) {
+      const d = c.data
+      const stale = Date.now() - c.at > 20000
+      if (d.hidden || d.page !== page || stale || !peers.some((p) => p.id === id)) {
+        c.el.style.display = 'none'
+        continue
+      }
+      let x = d.x * innerWidth
+      let y = d.y - scrollY
+      if (d.sel) {
+        try {
+          const el = document.querySelector(d.sel)
+          const r = el && el.getBoundingClientRect()
+          if (r && (r.width || r.height)) {
+            x = r.left + r.width * d.fx
+            y = r.top + r.height * d.fy
+          }
+        } catch {}
+      }
+      c.el.style.display = 'block'
+      c.el.style.transform = `translate(${x}px, ${y}px)`
+    }
+  }
+  function onCursor(d) {
+    let c = cursors.get(d.pid)
+    if (!c) {
+      const el = h('div.cursor', {}, arrow(d.color), h('b', { text: d.name }))
+      el.style.setProperty('--pc', d.color)
+      cursorLayer.append(el)
+      c = { el, data: d, at: Date.now() }
+      cursors.set(d.pid, c)
+    }
+    c.data = d
+    c.at = Date.now()
+    placeCursors()
+  }
+  setInterval(placeCursors, 2000)
 
   function focusPin(id) {
     const n = notes.find((x) => x.id === id)
@@ -404,17 +937,76 @@
         render()
       })
 
-  const es = new EventSource(`${API}/events`)
-  es.addEventListener('hello', (e) => {
-    const d = JSON.parse(e.data)
+  // The live channel is a WebSocket: tunnels (the shared link) hold back SSE but pass these through.
+  const handlers = {}
+  const handle = (event, fn) => (handlers[event] = fn)
+  let ws = null
+  let retry = 0
+  function connect() {
+    const u = new URL(`${API}/ws`)
+    u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
+    u.searchParams.set('pid', pid)
+    u.searchParams.set('page', page)
+    try {
+      const name = localStorage.getItem('pw-name')
+      if (name) u.searchParams.set('name', name)
+    } catch {}
+    const sock = new WebSocket(u)
+    ws = sock
+    sock.onopen = () => (retry = 0)
+    sock.onmessage = (e) => {
+      try {
+        const { event, data } = JSON.parse(e.data)
+        if (handlers[event]) handlers[event](data)
+      } catch {}
+    }
+    sock.onclose = () => {
+      if (ws !== sock) return
+      ws = null
+      if (full) return
+      online = false
+      render()
+      setTimeout(connect, Math.min(10000, 500 * 2 ** retry++))
+    }
+  }
+  handle('hello', (d) => {
     for (const k of Object.keys(activity)) delete activity[k]
     Object.assign(activity, d.activity || {})
+    me = d.me || null
+    peers = d.peers || []
+    access = d.access || 'host'
+    if (d.share) shareLinks = d.share.links
+    full = false
+    modeCursor()
     loadAll()
   })
-  es.addEventListener('note', (e) => {
-    const n = JSON.parse(e.data)
+  handle('full', () => {
+    full = true
+    render()
+  })
+  handle('peers', (d) => {
+    peers = d
+    me = peers.find((p) => p.id === pid) || me
+    for (const [id, c] of cursors) {
+      if (!peers.some((p) => p.id === id)) {
+        c.el.remove()
+        cursors.delete(id)
+      }
+    }
+    render()
+    // Somebody new: tell them where my pointer is.
+    sendCursor()
+  })
+  handle('cursor', onCursor)
+  handle('share', (d) => {
+    shareLinks = d.links
+    render()
+  })
+  handle('note', (n) => {
     const prev = notes.find((x) => x.id === n.id)
     if (prev && prev.status !== n.status && ['done', 'failed', 'handoff'].includes(n.status)) toast(n)
+    // The host hears about notes and replies from the review link as they arrive.
+    else if (access === 'host' && stOf(n) === 'review' && (!prev || stOf(prev) !== 'review')) toast(n)
     upsert(n)
     render()
     if (panelId === n.id) {
@@ -422,25 +1014,22 @@
       else refreshPanel()
     }
   })
-  es.addEventListener('activity', (e) => {
-    const { id, text } = JSON.parse(e.data)
+  handle('activity', ({ id, text }) => {
     if (text) activity[id] = text
     else delete activity[id]
     render()
     const line = panelId === id && root.querySelector('.panel .act')
     if (line && text) line.textContent = text
   })
-  es.addEventListener('reload', () => reload())
-  es.onerror = () => {
-    online = false
-    render()
-  }
+  handle('reload', () => reload())
+  connect()
 
   /** Closes every open card: the note being written, the panel, the list. */
   function closeAll() {
     root.querySelector('.form')?.remove()
+    root.querySelector('.namecard')?.remove()
     closePanel()
-    list.hidden = true
+    setOpen(false)
   }
 
   /** Bottom-right notice when a note finishes; a click opens its panel. Stays while hovered. */
@@ -448,7 +1037,7 @@
     const close = () => t.remove()
     const what = n.status === 'done' ? n.summary || n.text : n.status === 'handoff' ? T.take(n.id) : n.text
     const t = h(
-      `div.toast.ui.s-${n.status}`,
+      `div.toast.ui.s-${stOf(n)}`,
       {
         onclick: (e) => {
           e.stopPropagation()
@@ -456,7 +1045,7 @@
           openPanel(n.id)
         },
       },
-      h('b', { text: n.page === page ? T.st[n.status] : `${T.st[n.status]} · ${n.page}` }),
+      h('b', { text: n.page === page ? T.st[stOf(n)] : `${T.st[stOf(n)]} · ${n.page}` }),
       h('p', { text: short(what, 220) }),
       n.status === 'done' && n.costUsd ? h('small', { text: T.cost(n) }) : null,
       h('button', { text: '×', title: T.close, onclick: (e) => (e.stopPropagation(), close()) }),
@@ -472,18 +1061,21 @@
   // --- note mode.
   const setOn = (v) => {
     on = v
-    if (!on) hl.style.display = 'none'
-    document.documentElement.style.cursor = on ? 'crosshair' : ''
+    if (!active()) hl.style.display = 'none'
     render()
   }
-  btn.addEventListener('click', (e) => {
+  function highlight(t) {
+    if (!t || t === host || !t.getBoundingClientRect) return
+    target = t
+    const r = t.getBoundingClientRect()
+    Object.assign(hl.style, { display: 'block', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` })
+  }
+  hub.addEventListener('click', (e) => {
     e.stopPropagation()
+    if (isOpen) return
     if (on) return setOn(false)
-    list.hidden = !list.hidden
-    if (!list.hidden) {
-      renderList()
-      setOn(true)
-    }
+    setOn(true)
+    setOpen(true)
   })
 
   const fromUs = (e) => e.composedPath().includes(host)
@@ -491,13 +1083,29 @@
     const t = e.composedPath()[0]
     return t && t.nodeType === 1 && (t.closest('textarea,input,select,[contenteditable=""],[contenteditable=true]') || t.isContentEditable)
   }
+  document.addEventListener('keyup', (e) => {
+    if (e.key !== 'Alt' || !held) return
+    held = false
+    if (!active()) hl.style.display = 'none'
+    render()
+  })
   document.addEventListener('keydown', (e) => {
+    // Hold ⌥ (alone): the cursor turns into a pin and a click drops a note.
+    if (e.key === 'Alt' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.shiftKey && !typing(e)) {
+      held = true
+      if (lastPointer) {
+        const t = document.elementFromPoint(lastPointer.x, lastPointer.y)
+        if (t && t !== host) highlight(t)
+      }
+      render()
+      return
+    }
     if (e.code === 'KeyN' && e.altKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault()
       return setOn(!on)
     }
     if (e.key === 'Escape') {
-      const open = root.querySelector('.form') || panelId || !list.hidden
+      const open = root.querySelector('.form') || panelId || isOpen
       closeAll()
       if (!open && on) setOn(false)
       return
@@ -508,11 +1116,9 @@
   document.addEventListener(
     'mouseover',
     (e) => {
-      if (!on) return
+      if (!active()) return
       if (fromUs(e)) return void (hl.style.display = 'none')
-      target = e.target
-      const r = target.getBoundingClientRect()
-      Object.assign(hl.style, { display: 'block', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` })
+      highlight(e.target)
     },
     true,
   )
@@ -523,7 +1129,8 @@
       // A click outside closes whatever is open. If a card was open, the click only closes it.
       const card = root.querySelector('.form') || panelId
       closeAll()
-      if (!on) return
+      // ⌥ held at click time counts even if its keydown never reached the page (focus elsewhere).
+      if (!active() && !(e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey)) return
       e.preventDefault()
       e.stopPropagation()
       if (card) return
@@ -571,7 +1178,7 @@
     const save = async (text) => {
       if (!text) return close()
       try {
-        const n = await api('/notes', { method: 'POST', body: { ...at, text } })
+        const n = await api('/notes', { method: 'POST', body: { ...at, text, author: me ? me.name : null } })
         upsert(n)
         close()
         render()
@@ -673,54 +1280,60 @@
     const post = (what, body) => api(`/notes/${n.id}/${what}`, { method: 'POST', body: body || {} })
     const send = async (text) => {
       if (!text) return
-      await post('reply', { text })
+      await post('reply', { text, author: me ? me.name : null })
       const ta = root.querySelector('.panel textarea')
       if (ta) ta.value = ''
     }
 
-    const del = h('button.del', {
-      text: T.del,
-      onclick: act(async () => {
+    const del = ib(
+      'trash',
+      T.del,
+      act(async () => {
         if (!del.dataset.sure) {
           del.dataset.sure = '1'
-          del.textContent = T.sure
+          del.dataset.tip = T.sure
           return
         }
         await api(`/notes/${n.id}`, { method: 'DELETE' })
         closePanel()
       }),
-    })
+      '.del',
+    )
 
+    const review = stOf(n) === 'review'
     const running = ['queued', 'planning', 'working'].includes(n.status)
+    if (review && access === 'host') del.dataset.tip = T.discard
     const buttons = [del]
-    if (n.status === 'done') {
-      if (n.files && n.files.length) buttons.push(h('button', { text: T.undo, onclick: act(() => post('undo')) }))
-      buttons.push(h('button.ok', { text: T.archive, onclick: act(() => post('archive')) }))
-    }
-    if (n.status === 'failed') buttons.push(h('button.ok', { text: T.retry, onclick: act(() => post('retry')) }))
-    if (!['handoff', 'done'].includes(n.status)) buttons.push(h('button', { text: T.handoff, onclick: act(() => post('handoff')) }))
+    if (n.status === 'done' && n.files && n.files.length) buttons.push(ib('undo', T.undo, act(() => post('undo'))))
+    if (!['handoff', 'done'].includes(n.status)) buttons.push(ib('terminal', T.handoff, act(() => post('handoff'))))
+    if (n.status === 'done') buttons.push(ib('archive', T.archive, act(() => post('archive'))))
+    if (n.status === 'failed') buttons.push(ib('retry', T.retry, act(() => post('retry')), '.ok'))
+    if (review && access === 'host') buttons.push(ib('check', T.approve, act(() => post('approve')), '.ok'))
 
     let box = null
     if (!running) {
       const ph = n.status === 'asking' ? T.answer : T.follow
       box = textBox(ph, (text) => act(() => send(text))({ currentTarget: box }), closePanel)
-      buttons.push(h('button.ok', { text: n.status === 'asking' ? T.reply : T.send, onclick: act(() => send(box.value.trim())) }))
+      buttons.push(ib('send', n.status === 'asking' ? T.reply : T.send, act(() => send(box.value.trim())), '.ok'))
     }
 
     const who = { user: T.you, agent: T.agent, system: T.system }
     return h(
-      `div.card.panel.ui.s-${n.status}`,
+      `div.card.panel.ui.s-${stOf(n)}`,
       { 'data-id': n.id, onclick: (e) => e.stopPropagation() },
       h(
         'div.head',
         {},
         h('b', { text: n.page === page ? String(numberOf(n.id) || '•') : '•' }),
-        h('span', { text: T.st[n.status] }),
+        h('span', { text: T.st[stOf(n)] }),
         h('small', { text: n.id }),
         h('button', { text: '×', title: T.close, onclick: closePanel }),
       ),
-      (n.messages || []).map((m) => h(`p.msg.${m.role}`, {}, h('em', { text: who[m.role] || m.role }), m.text)),
-      running ? h('div.act', { text: activity[n.id] || n.activity || T.st[n.status] }) : null,
+      (n.messages || []).map((m) => {
+        const label = m.role === 'user' && m.author && (!me || m.author !== me.name) ? m.author : who[m.role] || m.role
+        return h(`p.msg.${m.role}`, {}, h('em', { text: label }), m.text)
+      }),
+      review ? h('p.msg.system', { text: access === 'host' ? T.reviewHost : T.awaiting }) : running ? h('div.act', { text: activity[n.id] || n.activity || T.st[n.status] }) : null,
       n.status === 'handoff' ? h('p.hint', { text: T.take(n.id) }) : null,
       n.diff ? h('details', {}, h('summary', { text: T.changes((n.files || []).length) }), diffView(n.diff)) : null,
       shotsView(n.shots || {}),
@@ -730,7 +1343,9 @@
     )
   }
 
-  addEventListener('resize', place)
+  addEventListener('resize', () => (place(), placeCursors()))
+  addEventListener('scroll', () => requestAnimationFrame(placeCursors), { passive: true, capture: true })
+  addEventListener('scroll', () => sendCursor(), { passive: true })
   addEventListener('scroll', () => requestAnimationFrame(place), { passive: true, capture: true })
   addEventListener('load', place)
   setInterval(place, 1000)

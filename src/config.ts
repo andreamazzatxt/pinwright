@@ -35,6 +35,13 @@ export interface Config {
   useApiKey: boolean
   /** Before/after thumbnails in the panel (Playwright + Chrome). Off by default: the reviewer sees changes live. */
   shots: boolean
+  /**
+   * Notes from a shared link may only edit files under a directory with one of these names
+   * (anywhere in the path: `src`, `apps/web/src`…). Config files, scripts and secrets stay off limits for every note.
+   */
+  guestDirs: string[]
+  /** cloudflared binary for live-session links. Default: on PATH, else downloaded once to ~/.cache/pinwright. */
+  cloudflared?: string
   /** Who launched the daemon: the CLI installs process-wide handlers, plugins must not. */
   mode: 'cli' | 'plugin'
   /** Print what happens. */
@@ -56,10 +63,11 @@ const DEFAULTS: Omit<Config, 'root' | 'log'> = {
   ],
   maxTurns: 30,
   timeoutMin: 20,
-  lang: 'it',
+  lang: 'en',
   instructions: '',
   useApiKey: false,
   shots: false,
+  guestDirs: ['src', 'public', 'app', 'pages', 'components', 'layouts', 'styles', 'css', 'assets', 'content', 'static', 'images', 'img'],
   mode: 'plugin',
 }
 

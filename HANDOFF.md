@@ -27,6 +27,12 @@ on 2026-11-13; "Implementation notes" at the end records where the build deviate
 | Ambiguity | **Changed 2026-11-13 after dogfooding:** the agent never asks. It picks the likeliest reading, applies it and states the assumption in the summary; the user follows up or undoes. `ask: true` brings back the question flow (`?` pin, resume on answer) |
 | Agent scope | **Changed 2026-11-13 after dogfooding:** the agent doesn't verify. No screenshot or rebuild tools, no Bash, no `check`: it edits and calls note_done; the reviewer validates live. Daemon before/after shots are off by default (`shots: true` brings them back). maxTurns 30. A trivial note now takes ~10 s |
 | Done notes | **Added 2026-11-13:** hidden by default (toggle "Mostra fatte" in the list, per browser); a bottom-right notice appears when a note becomes done/failed/handoff, with summary and tokens · $; click opens the panel. Working pins show three typing dots instead of the number. A click outside closes every open card |
+| Live sessions | **Added 2026-11-13:** a link to send someone in a call. cloudflared quick tunnel + secret token (link → HttpOnly SameSite cookie; remote = non-loopback or cf-connecting-ip/x-forwarded-for). Max 8 people (raised from 4 on 2026-11-16), made-up names ("Animal Trait" in it, "Trait Animal" in en) or one the person sets by clicking their own chip (remembered per browser, unique in the session), 8 colours, live cursors anchored to the element under the pointer (selector + fx/fy, fallback x ratio + page y). Notes/replies carry the author's name (messages.author). Remote visitors can't share, take, or read /status. Stop = kill tunnel + new token next time + guests disconnected. cloudflared: config path → PATH → `~/.cache/pinwright` → download of the latest official release on first share (macOS: codesign must be Cloudflare's team 68WVV388M8, then `--version` must run; otherwise deleted) |
+| Two share links | **Added 2026-11-16:** sharing makes two links, the share box shows one with a "YOLO mode" switch (off on every page load, never remembered; on = iridescent border that turns and lights up towards the pointer, remembered per browser) that swaps them (two tokens; the cookie keeps the token, so the server knows which link a guest came from). `review`: notes, replies and retries from it are stored with `approved = 0` (the column the scheduler already filters on) and show as "To approve" until the host presses Approve (`POST /notes/:id/approve`, host only) or discards the note; the host gets a toast. `auto`: guests' notes run like the host's |
+| Overlay UI | **Changed 2026-11-16:** English by default (`lang: 'it'` for Italian; the browser's language no longer decides). Actions are icon buttons with a hover label (inline SVG, `data-tip`). One element (the hub) bottom right: closed it's the pink pill ("Notes 6", badges for questions and notes to approve, live dot + copy while sharing); a click morphs it (size, corners, colour, 340 ms) into the dark notes card: one header line (the note-mode hint + ×), the link box while live, the notes, then "Show done" and "Go live". The YOLO border lives on the hub, open or closed. Short, dry copy |
+| Guest guardrails | **Added 2026-11-16:** every note: reads only inside root (PreToolUse on Read/Glob/Grep, planner too, since auto-allowed reads skip canUseTool) and no edits to manifests, lockfiles, `*.config.*`, `.env*`, scripts, Docker/CI/editor dirs (they run code on the next install/build/dev start). Guest notes (`notes.guest`: created on a shared link, or a guest replied): edits only under `cfg.guestDirs`, no reads of secrets; the prompt tells the agent the note is from a guest. Reason: a link lets strangers steer an agent on the host's machine |
+| ⌥ shortcut | **Added 2026-11-13:** holding ⌥ is a temporary note mode, cursor becomes a pin in the person's colour (light-DOM style with an SVG cursor); a click with altKey counts even if the keydown never reached the page |
+| Live transport | **Changed 2026-11-13:** SSE replaced by a WebSocket (`/__pw/ws`, own minimal RFC 6455 server in `src/ws.ts`) because cloudflared quick tunnels buffer text/event-stream entirely; cursors go over the same socket. Overlay reconnects with backoff |
 | Live | **Added 2026-11-13:** the user must see changes while the agent works. Prefer a dev server with HMR as target (ws passes through the proxy); with a rebuild command, it runs after every edit (`rebuildOnEdit`, coalesced) |
 | Lifecycle | Runs with the dev server. While it runs, the listener **must never die**. The queue persists and resumes on restart |
 | Verification | Playwright screenshots before and after, multi-viewport (the note's viewport plus mobile and desktop). The overlay captures the element's outerHTML and computed styles so the agent searches less |
@@ -69,7 +75,7 @@ src/
   vite.ts       plugin: apply 'serve', configureServer starts daemon, transformIndexHtml injects script, stop on close
   astro.ts      integration: astro:config:setup injectScript('page', loader) in dev; astro:server:setup/done
 overlay/
-  overlay.js    plain browser JS, shipped as-is, it/en strings (cfg.lang or navigator.language)
+  overlay.js    plain browser JS, shipped as-is, it/en strings (cfg.lang, English by default)
 ```
 
 ### Data model
@@ -153,7 +159,7 @@ export default {
   models: { planner: 'haiku', worker: 'sonnet' },
   viewports: [{ name: 'mobile', width: 390, height: 844 }, { name: 'desktop', width: 1440, height: 900 }],
   maxTurns: 60, timeoutMin: 20,
-  lang: 'it',
+  lang: 'en',
   instructions: '',                  // extra system prompt
 }
 ```

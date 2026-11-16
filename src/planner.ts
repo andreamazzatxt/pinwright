@@ -1,6 +1,7 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { agentEnv, type Ctx } from './context.js'
 import { notePrompt } from './agent.js'
+import { readHook } from './guard.js'
 import type { Note } from './store.js'
 
 const SYSTEM = `You plan work for a code agent. Given a review note pinned on a web page, find which source files the fix will most likely edit.
@@ -32,6 +33,8 @@ export async function plan(ctx: Ctx, note: Note, signal: AbortSignal): Promise<{
         persistSession: false,
         abortController: abort,
         env: agentEnv(ctx.cfg),
+        // Auto-allowed reads skip canUseTool: the hook keeps them inside the project (and off secrets for guests).
+        hooks: { PreToolUse: [{ hooks: [readHook(ctx.cfg.root, () => note.guest)] }] },
         canUseTool: async (name, input) =>
           ['Read', 'Glob', 'Grep'].includes(name) ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'read-only' },
       },

@@ -1,5 +1,6 @@
 import type { Server } from 'node:http'
 import { Bus } from './bus.js'
+import { Collab } from './collab.js'
 import { loadConfig, type Config, type Options } from './config.js'
 import type { Ctx } from './context.js'
 import { openDb } from './db.js'
@@ -35,7 +36,8 @@ export async function startPinwright(opts: Options = {}): Promise<Pinwright> {
   const ctx: Ctx = { cfg, store, bus, locks: new Locks(cfg.root), shooter: new Shooter(cfg), rebuilder: new Rebuilder(cfg, bus) }
   const scheduler = new Scheduler(ctx)
   const ops = new Ops(ctx, scheduler)
-  const server = createServer(ctx, ops, scheduler)
+  const collab = new Collab(cfg)
+  const server = createServer(ctx, ops, scheduler, collab)
 
   try {
     await listen(server, cfg.port, cfg.host)
@@ -57,6 +59,7 @@ export async function startPinwright(opts: Options = {}): Promise<Pinwright> {
     },
     stop() {
       stopped ??= (async () => {
+        collab.unshare()
         await scheduler.stop()
         await new Promise<void>((ok) => {
           server.close(() => ok())

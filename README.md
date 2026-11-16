@@ -9,6 +9,33 @@ screenshots, builds or tests): you are the check. Notes that don't touch the sam
 note is ambiguous it picks the likeliest reading, applies it, and says what it assumed; you follow up on the pin
 ("not quite…") and the same session resumes. Changes show up live while the agent works.
 
+Hold **⌥** and click anywhere to drop a note without entering note mode; the cursor turns into a pin while ⌥
+is down.
+
+## Live sessions
+
+Open the notes list and press **Go live** (bottom right of the list): pinwright opens a [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/)
+quick tunnel and gives you a link with a secret token. The **YOLO mode** switch (off every time the page loads) picks which
+link you copy:
+
+- **Off**: guests' notes, replies and retries wait, marked *To approve*, until you press **Approve** in the note
+  (or **Discard** it). You get a toast when one arrives.
+- **On** (the box gets an iridescent border that follows the pointer): guests' notes go straight to the agents, like yours.
+
+While live, the link box sits at the top of the notes card, and the closed button shows the live state with a copy button. Note and share
+actions are icons; hover one to see what it does. Both links stay valid at once: the switch only changes which one you copy.
+
+Whoever opens a link (up to 8 people in all) sees the site and every note, adds notes and replies, and everyone
+sees everyone's cursor, each with its own colour and a made-up name ("Volpe Ninja", "Gufo Turbo"…); click your own avatar to pick a name. Notes and
+replies carry their author's name. **Stop** closes the tunnel and voids both links.
+
+Notes make agents edit your code (inside the guardrails below): give the YOLO link only to people
+you'd let do that. Remote visitors can't share, approve, take notes or read the daemon's status.
+Guests need only a browser. On your side pinwright uses `cloudflared`: the one on your PATH if there is one,
+else it downloads Cloudflare's official build from their GitHub releases on the first share (once per machine,
+into `~/.cache/pinwright`; on macOS the download must carry Cloudflare's signature). Set `cloudflared` in the
+config to point at a binary of your own.
+
 Requires Node ≥ 22.13 and a logged-in Claude Code (`claude login`). The optional before/after thumbnails
 (`shots: true`) need Google Chrome and the optional `playwright-core` dependency.
 
@@ -61,7 +88,7 @@ export default {
   shots: false,                      // true adds before/after thumbnails to the panel
   maxTurns: 30,
   timeoutMin: 20,
-  lang: 'it',                        // language of the overlay and of the agent's messages
+  lang: 'en',                        // language of the overlay and of the agent's messages
   instructions: '',                  // appended to the agent's system prompt
   useApiKey: false,                  // true lets ANTHROPIC_API_KEY through instead of `claude login`
 }
@@ -89,8 +116,16 @@ pinwright reply <id> <text>        follow up on a note (or answer, with ask: tru
   selector, outerHTML, computed styles) plus your project's CLAUDE.md. No shell, no screenshots, no
   builds or tests: it finds the source, edits, and closes the note through in-process tools (`note_done`,
   `note_handoff`, and `note_ask` with `ask: true`).
-- **Guardrails**: edits only inside the project root (never `.git`, `node_modules`, `.pinwright`), no git
-  history commands, no network, no installs, no file changes through the shell (so undo always works).
+- **Guardrails**: reads and edits only inside the project root (never `.git`, `node_modules`, `.pinwright`), no
+  git history commands, no network, no installs, no file changes through the shell (so undo always works).
+  No note may change what runs code on the next install, build or dev start: `package.json`, lockfiles,
+  `*.config.*`, `.env*`, shell scripts, Dockerfiles, CI and editor folders.
+- **Guest notes** (written on a shared link, or replied to from one) also may only edit files under a source or
+  asset folder (`src/`, `public/`, `app/`, `pages/`, `components/`, `styles/`, `assets/`…, set with `guestDirs`)
+  and may not read secrets (`.env*`, keys, certificates), so nothing private can be copied into the page.
 - **Undo** restores the note's files. If another edit changed them since, the note's own patch is reversed on
   top; if it doesn't apply cleanly, undo is refused and lists the files.
-- The daemon binds 127.0.0.1 and only answers pages from localhost origins.
+- The daemon binds 127.0.0.1 and only answers pages from localhost origins, plus visitors who come through the
+  share tunnel with its token (link once, then an HttpOnly SameSite cookie).
+- The live channel (note events, presence, cursors) is a WebSocket on `/__pw/ws`: tunnels buffer SSE but pass
+  WebSockets through.

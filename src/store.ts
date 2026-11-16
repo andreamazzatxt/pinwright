@@ -39,6 +39,8 @@ export interface Note {
   text: string
   author: string | null
   approved: boolean
+  /** Someone on a shared link wrote it, or replied to it: the agent works under the guest rules. */
+  guest: boolean
   status: Status
   area: string[] | null
   sessionId: string | null
@@ -59,6 +61,8 @@ export interface Message {
   noteId: string
   role: 'user' | 'agent' | 'system'
   text: string
+  /** Who wrote it, for user messages in a live session (the made-up name). */
+  author: string | null
   at: string
 }
 
@@ -69,7 +73,7 @@ export interface Change {
   final: string | null
 }
 
-export type NewNote = Pick<Note, 'page' | 'text'> & Partial<Pick<Note, 'url' | 'selector' | 'element' | 'html' | 'styles' | 'fx' | 'fy' | 'pageX' | 'pageY' | 'viewport' | 'author'>>
+export type NewNote = Pick<Note, 'page' | 'text'> & Partial<Pick<Note, 'url' | 'selector' | 'element' | 'html' | 'styles' | 'fx' | 'fy' | 'pageX' | 'pageY' | 'viewport' | 'author' | 'approved' | 'guest'>>
 
 type Row = Record<string, unknown>
 
@@ -101,6 +105,7 @@ function toNote(r: Row): Note {
     text: r.text as string,
     author: (r.author as string) ?? null,
     approved: Boolean(r.approved),
+    guest: Boolean(r.guest),
     status: r.status as Status,
     area: parse(r.area, null),
     sessionId: (r.session_id as string) ?? null,
@@ -128,11 +133,12 @@ const COLUMNS: Record<string, string> = {
   tokens: 'tokens',
   startedAt: 'started_at',
   approved: 'approved',
+  guest: 'guest',
   text: 'text',
 }
 const JSON_COLS = new Set(['area', 'shots'])
 
-export type Patch = Partial<Pick<Note, 'status' | 'area' | 'sessionId' | 'attempts' | 'summary' | 'diff' | 'shots' | 'costUsd' | 'tokens' | 'startedAt' | 'approved' | 'text'>>
+export type Patch = Partial<Pick<Note, 'status' | 'area' | 'sessionId' | 'attempts' | 'summary' | 'diff' | 'shots' | 'costUsd' | 'tokens' | 'startedAt' | 'approved' | 'guest' | 'text'>>
 
 export class Store {
   constructor(
@@ -157,12 +163,14 @@ export class Store {
       viewport: n.viewport ?? null,
       text: n.text,
       author: n.author ?? null,
+      approved: n.approved === false ? 0 : 1,
+      guest: n.guest ? 1 : 0,
       created_at: t,
       updated_at: t,
     }
     const cols = Object.keys(note)
     this.db.prepare(`INSERT INTO notes (${cols.join(',')}) VALUES (${cols.map((c) => `:${c}`).join(',')})`).run(note)
-    this.message(note.id, 'user', n.text)
+    this.message(note.id, 'user', n.text, n.author ?? null)
     const created = this.get(note.id)!
     this.bus.emit('note', created)
     return created
@@ -196,13 +204,20 @@ export class Store {
     return note
   }
 
-  message(noteId: string, role: Message['role'], text: string): void {
-    this.db.prepare('INSERT INTO messages (note_id, role, text, at) VALUES (?, ?, ?, ?)').run(noteId, role, text, now())
+  message(noteId: string, role: Message['role'], text: string, author: string | null = null): void {
+    this.db.prepare('INSERT INTO messages (note_id, role, text, author, at) VALUES (?, ?, ?, ?, ?)').run(noteId, role, text, author, now())
   }
 
   messages(noteId: string): Message[] {
     const rows = this.db.prepare('SELECT * FROM messages WHERE note_id = ? ORDER BY id').all(noteId) as Row[]
-    return rows.map((r) => ({ id: r.id as number, noteId: r.note_id as string, role: r.role as Message['role'], text: r.text as string, at: r.at as string }))
+    return rows.map((r) => ({
+      id: r.id as number,
+      noteId: r.note_id as string,
+      role: r.role as Message['role'],
+      text: r.text as string,
+      author: (r.author as string) ?? null,
+      at: r.at as string,
+    }))
   }
 
   change(noteId: string, file: string): Change | undefined {

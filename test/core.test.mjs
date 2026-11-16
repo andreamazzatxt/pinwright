@@ -137,3 +137,62 @@ test('a reply re-queues a finished note and resets its attempts', async () => {
   assert.equal(r.attempts, 0)
   assert.deepEqual(store.messages(n.id).map((m) => m.text), ['n', 'not quite'])
 })
+
+test('websocket: handshake, short, medium and long messages both ways', async () => {
+  const http = await import('node:http')
+  const { acceptWs } = await import('../dist/ws.js')
+  const server = http.createServer()
+  server.on('upgrade', (req, socket) => {
+    const c = acceptWs(req, socket)
+    c.on('message', (m) => c.send(`echo:${m}`))
+  })
+  await new Promise((ok) => server.listen(0, '127.0.0.1', ok))
+  const ws = new WebSocket(`ws://127.0.0.1:${server.address().port}/`)
+  await new Promise((ok, fail) => ((ws.onopen = ok), (ws.onerror = fail)))
+  const got = []
+  ws.onmessage = (e) => got.push(e.data)
+  const msgs = ['hi', 'x'.repeat(300), 'y'.repeat(70000)]
+  for (const m of msgs) ws.send(m)
+  await new Promise((ok) => {
+    const t = setInterval(() => got.length === msgs.length && (clearInterval(t), ok()), 20)
+  })
+  assert.deepEqual(got, msgs.map((m) => `echo:${m}`))
+  ws.close()
+  server.close()
+})
+
+test('approval link: notes and replies wait until the host approves', async () => {
+  const { store, ops } = await setup()
+  const n = store.create({ page: '/', text: 'from a guest', approved: false })
+  assert.equal(n.approved, false)
+  assert.equal(n.status, 'queued')
+  assert.equal(ops.approve(n.id).approved, true)
+  store.update(n.id, { status: 'done' })
+  assert.equal(ops.reply(n.id, 'more', 'Gufo Zen', false).approved, false)
+  assert.equal(ops.approve(n.id).approved, true)
+  assert.equal(ops.reply(n.id, 'host follow-up').approved, true, 'the host never waits')
+})
+
+test('guard: protected files for every note, source dirs only for guests, reads stay in the project', async () => {
+  const { editVerdict, readVerdict } = await import('../dist/guard.js')
+  const dirs = ['src', 'public']
+  for (const f of ['package.json', 'apps/web/package.json', 'pnpm-lock.yaml', 'vite.config.ts', 'apps/landing/astro.config.mjs', '.env', 'apps/api/.env.local', 'scripts/deploy.sh', 'Dockerfile', '.github/workflows/ci.yml', 'pinwright.config.mjs', '.npmrc'])
+    assert.ok(editVerdict(f, false, dirs), f)
+  for (const f of ['src/a.css', 'apps/landing/src/pages/index.astro', 'public/logo.svg', 'README.md']) assert.equal(editVerdict(f, false, dirs), null, f)
+  assert.equal(editVerdict('apps/landing/src/styles/brand.css', true, dirs), null)
+  for (const f of ['README.md', 'index.html', 'lib/x.ts']) assert.ok(editVerdict(f, true, dirs), `guest ${f}`)
+  assert.ok(readVerdict('/p', { file_path: '/Users/x/.ssh/id_rsa' }, false))
+  assert.ok(readVerdict('/p', { path: '../other' }, false))
+  assert.equal(readVerdict('/p', { file_path: 'src/a.ts' }, false), null)
+  assert.equal(readVerdict('/p', { file_path: '.env' }, false), null, 'the host may read its env')
+  assert.ok(readVerdict('/p', { file_path: '.env' }, true))
+  assert.ok(readVerdict('/p', { file_path: 'certs/server.pem' }, true))
+})
+
+test('a guest reply turns the note into a guest note', async () => {
+  const { store, ops } = await setup()
+  const n = store.create({ page: '/', text: 'host note' })
+  assert.equal(n.guest, false)
+  store.update(n.id, { status: 'done' })
+  assert.equal(ops.reply(n.id, 'more', 'Gufo', true, true).guest, true)
+})
