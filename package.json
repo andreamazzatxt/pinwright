@@ -1,7 +1,7 @@
 {
   "name": "@andreamazza/pinwright",
   "version": "0.0.0",
-  "description": "Pin feedback on your running site; Claude agents fix it while you keep reviewing.",
+  "description": "Give Claude feedback right on your dev site: click an element, write a note, an agent edits your source.",
   "type": "module",
   "license": "MIT",
   "author": "Andrea Mazza",
@@ -11,7 +11,12 @@
   "exports": {
     ".": "./dist/index.js",
     "./vite": "./dist/vite.js",
-    "./astro": "./dist/astro.js"
+    "./astro": "./dist/astro.js",
+    "./nuxt": "./dist/nuxt.js",
+    "./next": "./dist/next.js",
+    "./next/script": "./dist/next-script.js",
+    "./webpack": "./dist/webpack.js",
+    "./rspack": "./dist/webpack.js"
   },
   "files": [
     "dist",
@@ -33,6 +38,11 @@
     "overlay",
     "vite",
     "astro",
+    "nuxt",
+    "nextjs",
+    "sveltekit",
+    "webpack",
+    "rspack",
     "dev-tools"
   ],
   "packageManager": "pnpm@10.11.0",

@@ -4,7 +4,7 @@ import { loadConfig } from './config.js'
 import { startPinwright } from './index.js'
 import type { Note } from './store.js'
 
-const HELP = `pinwright: pin feedback on your running site; Claude agents fix it.
+const HELP = `pinwright: give Claude feedback right on your dev site; agents fix the code.
 
 Usage:
   pinwright [start] --target http://localhost:4330   proxy the site and run the daemon
