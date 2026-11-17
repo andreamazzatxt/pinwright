@@ -1,8 +1,8 @@
 # Setting up pinwright
 
-Instructions for a coding agent (Claude Code) adding [pinwright](https://github.com/andreamazzatxt/pinwright) to the
-project in the current folder. pinwright lets the user leave notes on their dev site; Claude agents apply them to
-the code. It only runs in dev mode: production builds must not change.
+Instructions for a coding agent (Claude Code) bringing [pinwright](https://github.com/andreamazzatxt/pinwright) into
+the project in the current folder. pinwright lets the user leave notes on their dev site; Claude agents apply them
+to the code. It only ever runs in dev mode: production builds must not change.
 
 ## 1. Check the prerequisites
 
@@ -10,15 +10,59 @@ the code. It only runs in dev mode: production builds must not change.
 - Claude Code installed and logged in. If `claude` is missing or not logged in, stop and tell the user to run
   `claude login`.
 
-## 2. Install
+## 2. Look at the project
 
-Add `pinwright` as a **dev dependency** with the package manager the project already uses (look at the lockfile:
-`pnpm-lock.yaml`, `yarn.lock`, `bun.lock(b)`, `package-lock.json`).
+Work out, without changing anything:
 
-## 3. Wire it in
+- **the stack**, from `package.json` dependencies (first match: `next` Next.js, `nuxt` Nuxt, `astro` Astro,
+  `@sveltejs/kit` SvelteKit, `@react-router/dev` React Router, `@remix-run/dev` Remix, `@solidjs/start` SolidStart,
+  `@builder.io/qwik-city` Qwik City, `@rsbuild/core` Rsbuild, `@rspack/core` Rspack, `vite` Vite, `webpack` webpack)
+  or from the files of other stacks (`bin/rails` Rails, `manage.py` Django, `artisan` Laravel, `hugo.toml` Hugo…);
+- **the dev command**: the `dev` script (else `start`, `serve`) run with the package manager of the lockfile
+  (`pnpm-lock.yaml` pnpm, `yarn.lock` yarn, `bun.lock(b)` bun, else npm), or the stack's own (`bin/rails server`,
+  `python manage.py runserver`, `php artisan serve`, `hugo server`);
+- **whether pinwright is already there**: `pinwright` in `package.json`.
 
-Find the framework from `package.json` and its config files, then apply **one** of these. Keep the existing
-config as it is; only add pinwright.
+Tell the user in one line, e.g. "Next.js project, dev command `npm run dev`, pinwright not installed yet."
+
+## 3. Ask how they want to start
+
+Ask with a multiple-choice question (in Claude Code, the AskUserQuestion tool), these options in this order:
+
+1. **Start the dev server**: only if pinwright is already in the project. Its plugin starts with the dev server.
+2. **Run it now**: nothing is installed in the project.
+3. **Add it to the project**: install pinwright so the usual dev script always starts with it. Only for projects
+   with a `package.json` dev script.
+4. **Review a site that is already running**: they give its URL.
+
+Then follow the matching section below and nothing else.
+
+## 4a. Start the dev server
+
+Nothing to change. Tell the user to start their dev command as usual and open the URL it prints.
+
+## 4b. Run it now
+
+Change no file. Tell the user to run this in their terminal, from the project's folder:
+
+- `npx pinwright -y` when the dev command is the `dev`/`start`/`serve` script;
+- `npx pinwright -- <dev command>` otherwise, e.g. `npx pinwright -- bin/rails server`.
+
+pinwright starts the dev server, puts itself in front of it and opens the page in the browser. Its state lives in
+`.pinwright/`, which git ignores. Without `-y`, `npx pinwright` asks these same questions in the terminal.
+
+## 4c. Add it to the project
+
+The goal: from now on the project's usual dev script (`npm run dev` or equivalent) starts with pinwright.
+Add `pinwright` as a **dev dependency** with the project's package manager, then:
+
+- **stacks with a plugin** (all the ones below): wire it in with **one** of these. The dev script stays as it is
+  and loads pinwright by itself.
+- **any other JavaScript project**: don't touch config files. Keep the current dev script under `dev:plain` and
+  make `dev` run it through pinwright, e.g. `"dev": "vite"` becomes `"dev": "pinwright -- vite"` and
+  `"dev:plain": "vite"`. pinwright starts the command, puts itself in front of it and opens the page.
+
+Keep the existing config as it is; only add pinwright.
 
 **Vite, and frameworks built on it** (SvelteKit, React Router / Remix, SolidStart, Qwik, plain Vite apps):
 add the plugin to `vite.config.*`.
@@ -69,28 +113,20 @@ import { PinwrightPlugin } from 'pinwright/rspack' // same plugin as 'pinwright/
 export default { plugins: [/* existing */, new PinwrightPlugin()] }
 ```
 
-**Anything else** (Rails, Django, Laravel, Hugo, a custom server…): add a `pinwright` script to `package.json`
-(create a minimal one if there is none) that puts pinwright in front of the dev server:
+Change nothing else: no other files, no config refactors, no new dependencies besides `pinwright`.
 
-```json
-{ "scripts": { "pinwright": "pinwright --target http://localhost:3000" } }
-```
+Verify: start the usual dev script in the background and check that its log prints
+`[pinwright] listening on http://127.0.0.1:4340` (with the wrapped script, the port may be the next free one). If the port is taken, set another one with
+`pinwright({ port: 4350 })` and try again. Then stop the server, and tell the user to start their dev server as
+usual from now on.
 
-Use the real dev server URL. The user then opens `http://localhost:4340/` instead of the dev server.
+## 4d. Review a site that is already running
 
-## 4. Don't change anything else
+Ask for the URL if they didn't give it (e.g. `http://localhost:3000`). Change no file. Tell the user to run
+`npx pinwright --target <url>` in their terminal: pinwright opens the site with the overlay on top.
 
-No other files, no config refactors, no new dependencies besides `pinwright`. pinwright keeps its state in
-`.pinwright/`, which ignores itself in git.
+## 5. Tell the user
 
-## 5. Verify
-
-Start the dev server (or the `pinwright` script) in the background and check that the log prints
-`[pinwright] listening on http://127.0.0.1:4340`. If the port is taken, set another one with
-`pinwright({ port: 4350 })` (or `--port 4350`) and try again. Then stop the server.
-
-## 6. Tell the user
-
-- which URL to open (the dev server's, or `http://localhost:4340/` with the proxy);
+- how to start it (from the section above) and that the browser opens the page;
 - hold **⌥** and click any element to leave a note, or press **N**;
 - **Go live** in the notes list shares the page with up to 8 people.

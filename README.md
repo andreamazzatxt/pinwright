@@ -26,7 +26,42 @@ Open Claude Code in your project's folder and paste this:
 Set up pinwright in this project: follow https://raw.githubusercontent.com/andreamazzatxt/pinwright/main/SETUP.md
 ```
 
-Claude reads [SETUP.md](SETUP.md), installs pinwright, wires it into your framework and checks that it starts.
+Claude follows [SETUP.md](SETUP.md): it recognises your stack and asks the same questions as `npx pinwright`:
+run it now without installing anything, add it to the project (it installs and wires the plugin, then checks
+that it starts), or review a site that is already running.
+
+## Or just run it with npx
+
+```sh
+npx pinwright
+```
+
+Run it in your project's folder. pinwright recognises the stack (Next.js, Nuxt, Astro, SvelteKit, Vite, Rspack,
+Rails, Django, Laravel…) and asks how you want to start:
+
+```
+  pinwright 0.2.0 · give Claude feedback right on your dev site
+
+  Project  Next.js · npm run dev
+  Claude   ✓ Claude Code found
+
+? How do you want to start?
+❯ Run it now                              nothing is installed in the project
+  Add it to the project                   Claude Code installs and wires the Next.js plugin
+  Review a site that is already running   you give its URL
+```
+
+**Run it now** starts your dev command, reads the URL it prints, and opens the site with the overlay on top.
+Nothing goes into `package.json` or your config files: notes and state live in `.pinwright/`, which git ignores,
+so `git status` stays clean. **Add it to the project** hands [SETUP.md](SETUP.md) to Claude Code.
+
+Skip the questions with flags:
+
+```sh
+npx pinwright -y                               # run the dev script straight away
+npx pinwright -- bin/rails server              # your own dev command, any stack
+npx pinwright --target http://localhost:3000   # a site that is already running
+```
 
 ## Manual setup
 
@@ -44,7 +79,7 @@ npm i -D pinwright
 | Nuxt | `modules: ['pinwright/nuxt']` in `nuxt.config` |
 | Next.js | `withPinwright(config)` + `<Pinwright />` in the root layout (below) |
 | Webpack 5, Rspack, Rsbuild | `plugins: [new PinwrightPlugin()]`, from `pinwright/rspack` |
-| Anything else | `npx pinwright --target <dev server URL>` (proxy) |
+| Anything else | `npx pinwright` (no install, see above) |
 
 The daemon starts and stops with your dev server. Nothing is added to production builds.
 
@@ -112,16 +147,9 @@ export default { plugins: [new PinwrightPlugin()] }
 
 It runs in watch mode only (dev server, `--watch`) and adds a small entry that loads the overlay.
 
-**Any other stack (proxy)**
-
-```sh
-npx pinwright --target http://localhost:3000
-# then open http://localhost:4340/
-```
-
-pinwright sits in front of your dev server and injects the overlay; HMR websockets pass through. If your server
-has no HMR, pass a rebuild command with `--rebuild ./scripts/rebuild.sh`: it runs after edits and open pages
-reload at the same scroll position.
+**Any other stack**: use `npx pinwright` (above). pinwright sits in front of your dev server as a proxy and
+injects the overlay; HMR websockets pass through. If your server has no HMR, pass a rebuild command with
+`--rebuild ./scripts/rebuild.sh`: it runs after edits and open pages reload at the same scroll position.
 
 All plugins take the same options as the config file: `pinwright({ port: 4350 })`.
 
@@ -204,7 +232,9 @@ export default {
 ## CLI
 
 ```
-pinwright [start] --target <url>   run the daemon (proxy mode when there's a target)
+pinwright                          ask how to start (in a terminal), or run the dev script (-y, or no terminal)
+pinwright -- <command>             same, with your own dev command
+pinwright --target <url>           review a site that is already running
 pinwright list [--all]             notes in the running daemon
 pinwright take <id>                mark a note taken and print a prompt for an interactive session
 pinwright done <id> [summary]      close a note you handled by hand

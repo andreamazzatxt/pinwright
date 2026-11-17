@@ -316,7 +316,9 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
       const lines = [`${req.method} ${req.url} HTTP/1.1`]
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         const k = req.rawHeaders[i]
-        lines.push(`${k}: ${k.toLowerCase() === 'host' ? t.host : req.rawHeaders[i + 1]}`)
+        const lk = k.toLowerCase()
+        // Dev servers (Next.js) refuse HMR sockets from another origin: to them it must look like their own page.
+        lines.push(`${k}: ${lk === 'host' ? t.host : lk === 'origin' ? t.origin : req.rawHeaders[i + 1]}`)
       }
       up.write(`${lines.join('\r\n')}\r\n\r\n`)
       if (head.length) up.write(head)
