@@ -28,15 +28,15 @@ Set up pinwright (https://github.com/andreamazzatxt/pinwright) in this project, 
 dev site and Claude agents apply them to the code.
 
 1. Check that Node is >= 22.13 and that Claude Code is logged in. If it isn't, stop and tell me to run `claude login`.
-2. Install @andreamazza/pinwright as a dev dependency, with the package manager this project already uses.
+2. Install pinwright as a dev dependency, with the package manager this project already uses.
 3. Find the framework and wire pinwright in, dev mode only:
-   - Vite, SvelteKit, React Router, SolidStart, Qwik: add `pinwright()` from '@andreamazza/pinwright/vite' to the Vite plugins.
-   - Astro: add `pinwright()` from '@andreamazza/pinwright/astro' to `integrations`.
-   - Nuxt: add '@andreamazza/pinwright/nuxt' to `modules`.
-   - Next.js: wrap the exported config with `withPinwright` from '@andreamazza/pinwright/next', and render
-     `<Pinwright />` from '@andreamazza/pinwright/next/script' at the end of <body> in the root layout
+   - Vite, SvelteKit, React Router, SolidStart, Qwik: add `pinwright()` from 'pinwright/vite' to the Vite plugins.
+   - Astro: add `pinwright()` from 'pinwright/astro' to `integrations`.
+   - Nuxt: add 'pinwright/nuxt' to `modules`.
+   - Next.js: wrap the exported config with `withPinwright` from 'pinwright/next', and render
+     `<Pinwright />` from 'pinwright/next/script' at the end of <body> in the root layout
      (app router) or in pages/_document (pages router).
-   - Webpack 5, Rspack, Rsbuild: add `new PinwrightPlugin()` from '@andreamazza/pinwright/rspack' to `plugins`.
+   - Webpack 5, Rspack, Rsbuild: add `new PinwrightPlugin()` from 'pinwright/rspack' to `plugins`.
    - Anything else: add a "pinwright" script running `pinwright --target <dev server URL>`.
 4. Change nothing else. Production builds must stay exactly as they are.
 5. Start the dev server and check its log prints "[pinwright] listening on …", then stop it.
@@ -49,16 +49,16 @@ Requirements: Node ≥ 22.13 and Claude Code logged in (`claude login`). pinwrig
 subscription by default; no API key needed.
 
 ```sh
-npm i -D @andreamazza/pinwright
+npm i -D pinwright
 ```
 
 | Framework | Setup |
 | --- | --- |
-| Vite, SvelteKit, React Router, SolidStart, Qwik | `plugins: [pinwright()]` in `vite.config`, from `@andreamazza/pinwright/vite` |
-| Astro | `integrations: [pinwright()]` in `astro.config`, from `@andreamazza/pinwright/astro` |
-| Nuxt | `modules: ['@andreamazza/pinwright/nuxt']` in `nuxt.config` |
+| Vite, SvelteKit, React Router, SolidStart, Qwik | `plugins: [pinwright()]` in `vite.config`, from `pinwright/vite` |
+| Astro | `integrations: [pinwright()]` in `astro.config`, from `pinwright/astro` |
+| Nuxt | `modules: ['pinwright/nuxt']` in `nuxt.config` |
 | Next.js | `withPinwright(config)` + `<Pinwright />` in the root layout (below) |
-| Webpack 5, Rspack, Rsbuild | `plugins: [new PinwrightPlugin()]`, from `@andreamazza/pinwright/rspack` |
+| Webpack 5, Rspack, Rsbuild | `plugins: [new PinwrightPlugin()]`, from `pinwright/rspack` |
 | Anything else | `npx pinwright --target <dev server URL>` (proxy) |
 
 The daemon starts and stops with your dev server. Nothing is added to production builds.
@@ -70,7 +70,7 @@ The daemon starts and stops with your dev server. Nothing is added to production
 
 ```js
 // vite.config.js
-import pinwright from '@andreamazza/pinwright/vite'
+import pinwright from 'pinwright/vite'
 export default { plugins: [pinwright()] }
 ```
 
@@ -80,7 +80,7 @@ The plugin puts the overlay into every HTML page the Vite dev server sends, serv
 
 ```js
 // astro.config.mjs
-import pinwright from '@andreamazza/pinwright/astro'
+import pinwright from 'pinwright/astro'
 export default { integrations: [pinwright()] }
 ```
 
@@ -88,20 +88,20 @@ export default { integrations: [pinwright()] }
 
 ```js
 // nuxt.config.ts
-export default defineNuxtConfig({ modules: ['@andreamazza/pinwright/nuxt'] })
+export default defineNuxtConfig({ modules: ['pinwright/nuxt'] })
 ```
 
 **Next.js** (Turbopack or webpack)
 
 ```js
 // next.config.js
-import { withPinwright } from '@andreamazza/pinwright/next'
+import { withPinwright } from 'pinwright/next'
 export default withPinwright({ /* your config */ })
 ```
 
 ```jsx
 // app/layout.jsx
-import { Pinwright } from '@andreamazza/pinwright/next/script'
+import { Pinwright } from 'pinwright/next/script'
 
 export default function RootLayout({ children }) {
   return (
@@ -121,7 +121,7 @@ export default function RootLayout({ children }) {
 
 ```js
 // rspack.config.js (or webpack.config.js; with Rsbuild, under tools.rspack.plugins)
-import { PinwrightPlugin } from '@andreamazza/pinwright/rspack' // same plugin as '/webpack'
+import { PinwrightPlugin } from 'pinwright/rspack' // same plugin as '/webpack'
 export default { plugins: [new PinwrightPlugin()] }
 ```
 

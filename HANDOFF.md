@@ -16,7 +16,7 @@ on 2026-11-13; "Implementation notes" at the end records where the build deviate
 
 | Topic | Decision |
 |---|---|
-| Name | `pinwright`. Package `@andreamazza/pinwright`, bin `pinwright` (unscoped `pinwright` is also free on npm) |
+| Name | `pinwright`. Package `pinwright`, bin `pinwright` (unscoped `pinwright` is also free on npm) |
 | Distribution | Own GitHub repo, published on npm later. **Never publish without an explicit yes.** |
 | Integration | Generic proxy CLI (`pinwright --target http://localhost:4330`) **plus** a Vite plugin (`pinwright/vite`) and an Astro integration (`pinwright/astro`) that start the daemon together with the dev server |
 | Agent engine | Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`), in process |

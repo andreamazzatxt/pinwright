@@ -4,7 +4,7 @@ import { tryDaemon } from './plugin.js'
 type ConfigInput<C> = C | ((phase: string, ctx: any) => C | Promise<C>)
 
 /**
- * Next.js: wrap the config, then render `<Pinwright />` (from `@andreamazza/pinwright/next/script`) in the root layout.
+ * Next.js: wrap the config, then render `<Pinwright />` (from `pinwright/next/script`) in the root layout.
  * In `next dev` this starts pinwright and tells the component where the overlay lives; in builds it does nothing.
  *
  *   export default withPinwright(nextConfig)

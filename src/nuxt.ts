@@ -9,7 +9,7 @@ interface Nuxt {
 
 /**
  * Nuxt module: in `nuxt dev`, starts pinwright and adds the overlay to every page's head.
- * `modules: [['@andreamazza/pinwright/nuxt', { ...options }]]`
+ * `modules: [['pinwright/nuxt', { ...options }]]`
  */
 export default async function pinwright(inline: Options = {}, nuxt: Nuxt): Promise<void> {
   if (!nuxt.options.dev) return
