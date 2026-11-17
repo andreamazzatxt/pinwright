@@ -244,7 +244,7 @@
   .panel{width:400px;max-height:75vh;overflow:auto;padding:14px}
   textarea{display:block;width:100%;min-height:70px;padding:8px;border:1px solid #d6d8de;border-radius:8px;font:14px/1.4 system-ui,sans-serif;color:#121318;background:#fff;resize:vertical}
   .row{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:8px}
-  .row button{padding:8px 14px;border:0;border-radius:999px;background:#eef1f5;color:#121318}
+  .row button:not(.ib){padding:8px 14px;border:0;border-radius:999px;background:#eef1f5;color:#121318}
   .row .ok{background:#121318;color:#fff}
   .row .del{margin-right:auto;background:none;color:#c4243f}
   .row .del[data-sure]{background:#c4243f;color:#fff}
