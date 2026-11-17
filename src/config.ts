@@ -40,6 +40,13 @@ export interface Config {
    * (anywhere in the path: `src`, `apps/web/src`…). Config files, scripts and secrets stay off limits for every note.
    */
   guestDirs: string[]
+  /** CSS selector: notes may only be placed inside matching elements (e.g. a microfrontend's mount point). */
+  scope?: string
+  /**
+   * Microfrontend mode: the target is a Module Federation remote, loaded by a shell running elsewhere. The overlay
+   * rides along in the remote's JavaScript instead of the HTML, so it shows up wherever the shell mounts it.
+   */
+  mfe: boolean
   /** cloudflared binary for live-session links. Default: on PATH, else downloaded once to ~/.cache/pinwright. */
   cloudflared?: string
   /** Who launched the daemon: the CLI installs process-wide handlers, plugins must not. */
@@ -67,6 +74,7 @@ const DEFAULTS: Omit<Config, 'root' | 'log'> = {
   instructions: '',
   useApiKey: false,
   shots: false,
+  mfe: false,
   guestDirs: ['src', 'public', 'app', 'pages', 'components', 'layouts', 'styles', 'css', 'assets', 'content', 'static', 'images', 'img'],
   mode: 'plugin',
 }

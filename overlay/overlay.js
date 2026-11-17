@@ -10,6 +10,16 @@
   const API = `${BASE}/__pw`
   const CFG = window.__pinwright || {}
   const LANG = String(CFG.lang || 'en').slice(0, 2) === 'it' ? 'it' : 'en'
+  // Notes only inside these elements (a CSS selector), e.g. one microfrontend's mount point in a shell.
+  const SCOPE = typeof CFG.scope === 'string' && CFG.scope.trim() ? CFG.scope.trim() : null
+  const inScope = (el) => {
+    if (!SCOPE) return true
+    try {
+      return !!(el && el.closest && el.closest(SCOPE))
+    } catch {
+      return true
+    }
+  }
   const tokensOf = (t) => (!t ? '0' : t >= 1e6 ? `${(t / 1e6).toFixed(1)}M` : t >= 1e3 ? `${Math.round(t / 1e3)}k` : String(t))
   const T = {
     it: {
@@ -218,6 +228,7 @@
   .list .live svg{width:14px;height:14px}
   .list .live[data-tip]:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);right:0;padding:4px 8px;border-radius:6px;background:#fff;color:#121318;font:600 11px system-ui,sans-serif;white-space:nowrap;pointer-events:none}
   .list .live{position:relative}
+  .scope{position:fixed;pointer-events:none;outline:2px solid rgb(255 59 107/.55);outline-offset:-1px;border-radius:4px;box-shadow:0 0 0 9999px rgb(18 19 24/.12);display:none}
   .hl{position:fixed;pointer-events:none;outline:2px dashed #ff3b6b;outline-offset:2px;border-radius:2px;display:none}
   .pin{position:fixed;display:grid;place-items:center;width:28px;height:28px;margin:-28px 0 0 0;border-radius:50% 50% 50% 0;background:var(--c);color:#fff;font:800 13px system-ui,sans-serif;box-shadow:0 4px 12px rgb(0 0 0/.35);cursor:pointer;transform:rotate(-45deg);transform-origin:0 100%}
   .pin i{font-style:normal;transform:rotate(45deg)}
@@ -401,6 +412,16 @@
   const active = () => on || held
 
   const hl = h('div.hl')
+  // Where notes are allowed: outlined, the rest of the page dimmed, while placing a note.
+  const scopeFrame = h('div.scope')
+  function drawScope() {
+    const el = SCOPE && active() ? (() => { try { return document.querySelector(SCOPE) } catch { return null } })() : null
+    const r = el && el.getBoundingClientRect()
+    if (!r || !r.width) return void (scopeFrame.style.display = 'none')
+    Object.assign(scopeFrame.style, { display: 'block', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` })
+  }
+  addEventListener('scroll', () => drawScope(), { capture: true, passive: true })
+  addEventListener('resize', () => drawScope())
   const face = h('div.face')
   const list = h('div.list', { hidden: true })
   const hub = h('div.hub.ui', {}, list, face)
@@ -410,7 +431,7 @@
   const pins = h('div')
   const cursorLayer = h('div')
   const toasts = h('div.toasts')
-  root.append(hl, pins, cursorLayer, toasts, dock)
+  root.append(scopeFrame, hl, pins, cursorLayer, toasts, dock)
 
   // The page's own cursor during note mode: a pin in my colour, tip on the hotspot. Needs a light-DOM rule.
   const modeStyle = document.createElement('style')
@@ -514,6 +535,7 @@
   }
 
   function render() {
+    drawScope()
     const all = mine()
     const ns = all.filter(shown)
     const open = all.filter((n) => n.status !== 'done').length
@@ -1066,6 +1088,11 @@
   }
   function highlight(t) {
     if (!t || t === host || !t.getBoundingClientRect) return
+    if (!inScope(t)) {
+      target = null
+      hl.style.display = 'none'
+      return
+    }
     target = t
     const r = t.getBoundingClientRect()
     Object.assign(hl.style, { display: 'block', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` })
@@ -1131,6 +1158,8 @@
       closeAll()
       // ⌥ held at click time counts even if its keydown never reached the page (focus elsewhere).
       if (!active() && !(e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey)) return
+      // Outside the scope the page behaves as usual, so the rest of the app stays usable.
+      if (!inScope(e.target)) return
       e.preventDefault()
       e.stopPropagation()
       if (card) return

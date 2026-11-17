@@ -9,6 +9,7 @@ import { acceptWs, type WsConn } from './ws.js'
 import { OpError, type Ops } from './ops.js'
 import type { Scheduler } from './scheduler.js'
 import type { Note } from './store.js'
+import { loaderCode } from './inject.js'
 
 const OVERLAY = join(dirname(fileURLToPath(import.meta.url)), '..', 'overlay', 'overlay.js')
 export const SCRIPT_PATH = '/__pw/overlay.js'
@@ -78,7 +79,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
     const approved = access !== 'review'
 
     if (path === '/overlay.js') {
-      const cfgJs = `window.__pinwright=${JSON.stringify({ lang: cfg.lang })};\n`
+      const cfgJs = `window.__pinwright=${JSON.stringify({ lang: cfg.lang, scope: cfg.scope })};\n`
       res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store' })
       return void res.end(cfgJs + readFileSync(OVERLAY, 'utf8'))
     }
@@ -198,7 +199,27 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
     const up = http.request({ host: t.hostname, port: t.port || 80, path: req.url, method: req.method, headers }, (r) => {
       const h = { ...r.headers }
       if (typeof h.location === 'string' && h.location.startsWith(t.origin)) h.location = h.location.slice(t.origin.length) || '/'
-      const html = (r.headers['content-type'] ?? '').includes('text/html')
+      const type = r.headers['content-type'] ?? ''
+      const html = type.includes('text/html')
+      // Microfrontend: the shell loads this server's JavaScript, not its HTML, so the overlay loader goes there.
+      const js = cfg.mfe && /javascript/.test(type) && !/\.hot-update\.js(\?|$)/.test(req.url ?? '') && (r.statusCode ?? 200) < 300
+      if (js && req.method !== 'HEAD') {
+        const chunks: Buffer[] = []
+        r.on('data', (c: Buffer) => chunks.push(c))
+        r.on('end', () => {
+          const own = `http://${req.headers.host ?? `127.0.0.1:${cfg.port}`}${SCRIPT_PATH}`
+          // Appended, so source maps keep their line numbers.
+          const body = Buffer.concat([Buffer.concat(chunks), Buffer.from(`\n;${loaderCode(own)}\n`)])
+          delete h['content-length']
+          delete h.etag
+          delete h['content-encoding']
+          h['cache-control'] = 'no-store'
+          res.writeHead(r.statusCode ?? 200, h)
+          res.end(body)
+        })
+        r.on('error', () => res.destroy())
+        return
+      }
       if (!html || req.method === 'HEAD') {
         res.writeHead(r.statusCode ?? 502, h)
         return void r.pipe(res)

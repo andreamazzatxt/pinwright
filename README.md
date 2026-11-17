@@ -63,6 +63,20 @@ npx pinwright -- bin/rails server              # your own dev command, any stack
 npx pinwright --target http://localhost:3000   # a site that is already running
 ```
 
+## Microfrontends
+
+For a Module Federation remote that a shell mounts, run pinwright in the remote's folder:
+
+```sh
+npx pinwright --mfe --scope '[data-mfe="checkout"]' --port 4380
+```
+
+pinwright starts the remote's dev server and sits in front of it. Point your shell at `http://localhost:4380`
+instead of the remote's own port, then open the shell as usual: the overlay comes with the remote's JavaScript, the
+shell's URL and login don't change, and agents only edit the remote's code. `--scope` is the CSS selector of the
+remote's mount point: notes can only be placed inside it (it's outlined while you place one), and the rest of the
+shell keeps working. `npx pinwright` offers this mode by itself when the folder is a Module Federation remote.
+
 ## Manual setup
 
 Requirements: Node ≥ 22.13 and Claude Code logged in (`claude login`). pinwright uses your Claude Code
@@ -235,6 +249,7 @@ export default {
 pinwright                          ask how to start (in a terminal), or run the dev script (-y, or no terminal)
 pinwright -- <command>             same, with your own dev command
 pinwright --target <url>           review a site that is already running
+pinwright --mfe --scope <css>      a microfrontend, reviewed inside its shell (see Microfrontends)
 pinwright list [--all]             notes in the running daemon
 pinwright take <id>                mark a note taken and print a prompt for an interactive session
 pinwright done <id> [summary]      close a note you handled by hand

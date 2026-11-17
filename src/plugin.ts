@@ -47,15 +47,4 @@ export async function tryDaemon(opts: Options): Promise<Pinwright | null> {
   }
 }
 
-/**
- * Browser code that loads the overlay once. A classic script, so the overlay can find its own origin through
- * document.currentScript. Automated browsers are skipped (the overlay skips them too).
- */
-export function loaderCode(scriptUrl: string): string {
-  return `if(typeof window!=='undefined'&&!navigator.webdriver&&!document.querySelector('script[data-pinwright]')){const s=document.createElement('script');s.src=${JSON.stringify(scriptUrl)};s.dataset.pinwright='';(document.body||document.documentElement).append(s)}`
-}
-
-/** The tag to put in served HTML. */
-export function scriptTag(scriptUrl: string): string {
-  return `<script src="${scriptUrl}" data-pinwright defer></script>`
-}
+export { loaderCode, scriptTag } from './inject.js'

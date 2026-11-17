@@ -25,6 +25,9 @@ Options:
   --port <n>         daemon port (default 4340, or the next free one)
   --no-open          don't open the browser
   -y, --yes          no questions: run the dev script straight away
+  --mfe              microfrontend: the overlay rides in this remote's JavaScript, inside your shell
+  --scope <css>      notes only inside matching elements, e.g. '[data-mfe="checkout"]'
+  --shell <url>      with --mfe: the shell page to open
   --root <dir>       project root (default: cwd)
   --rebuild <cmd>    command to run after edits (sites without HMR)
   --agents <n>       max parallel agents (default 3)
@@ -44,6 +47,9 @@ const { values: v, positionals } = parseArgs({
   options: {
     open: { type: 'boolean', default: true },
     yes: { type: 'boolean', short: 'y' },
+    mfe: { type: 'boolean' },
+    scope: { type: 'string' },
+    shell: { type: 'string' },
     target: { type: 'string' },
     port: { type: 'string' },
     root: { type: 'string' },
@@ -114,6 +120,9 @@ async function start(): Promise<void> {
   let devCmd: string[] | null = devArgs.length ? devArgs : null
   let siteArg = v.target
   let asked = false
+  let mfe = v.mfe ?? fileCfg.mfe
+  let scope = v.scope ?? fileCfg.scope
+  let shell = v.shell
   // Bare `pinwright` in a terminal: ask what to do instead of guessing.
   if (!devCmd && !siteArg && !fileCfg.target && !v.yes && positionals.length === 0 && interactive()) {
     const plan = await wizard(root)
@@ -121,7 +130,14 @@ async function start(): Promise<void> {
     if (plan.kind === 'done') return
     if (plan.kind === 'plain') return runPlain(plan.cmd, root)
     if (plan.kind === 'site') siteArg = plan.url
-    else devCmd = plan.cmd
+    else {
+      devCmd = plan.cmd
+      if (plan.mfe) {
+        mfe = true
+        scope = plan.mfe.scope || undefined
+        shell = plan.mfe.shell
+      }
+    }
   }
   // No site given anywhere: run the project's own dev command and proxy whatever URL it prints.
   const run = !siteArg && !fileCfg.target
@@ -144,6 +160,8 @@ async function start(): Promise<void> {
     mode: 'cli' as const,
     root,
     target: siteArg,
+    mfe,
+    scope,
     rebuild: v.rebuild,
     maxAgents: num(v.agents),
     models: v.model ? { worker: v.model } : undefined,
@@ -164,11 +182,18 @@ async function start(): Promise<void> {
     pw.setSiteUrl(target)
     await waitReady(target)
   }
-  console.log(`\n[pinwright] reviewing ${target} → open ${pw.url}/  (⌥ + click to leave a note)\n`)
-  if ((dev || asked) && v.open) openBrowser(`${pw.url}/`)
+  const local = pw.url.replace('127.0.0.1', 'localhost')
+  if (mfe) {
+    console.log(`\n[pinwright] microfrontend ${target} → load it from ${local} in your shell (instead of ${target})`)
+    console.log(`[pinwright] then open the shell${shell ? ` (${shell})` : ''}: the overlay comes with this remote${scope ? `, notes only inside ${scope}` : ''}\n`)
+    if (shell && v.open) openBrowser(shell)
+    return
+  }
+  console.log(`\n[pinwright] reviewing ${target} → open ${local}/  (⌥ + click to leave a note)\n`)
+  if ((dev || asked) && v.open) openBrowser(`${local}/`)
 }
 
-type Plan = { kind: 'run'; cmd: string[] } | { kind: 'site'; url: string } | { kind: 'plain'; cmd: string[] } | { kind: 'done' }
+type Plan = { kind: 'run'; cmd: string[]; mfe?: { scope: string; shell: string } } | { kind: 'site'; url: string } | { kind: 'plain'; cmd: string[] } | { kind: 'done' }
 
 const SETUP_URL = 'https://raw.githubusercontent.com/andreamazzatxt/pinwright/main/SETUP.md'
 
@@ -179,13 +204,14 @@ async function wizard(root: string): Promise<Plan> {
   const dev = project.dev?.join(' ')
   const version = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version
   console.log(`\n  ${pink(bold('pinwright'))} ${dim(version + ' · give Claude feedback right on your dev site')}\n`)
-  console.log(`  ${dim('Project')}  ${bold(project.name)}${dev ? dim(' · ' + dev) : ''}${project.installed ? green('  · pinwright already set up') : ''}`)
+  console.log(`  ${dim('Project')}  ${bold(project.name)}${project.mfe ? dim(' · Module Federation') : ''}${dev ? dim(' · ' + dev) : ''}${project.installed ? green('  · pinwright already set up') : ''}`)
   console.log(`  ${dim('Claude ')}  ${claude ? green('✓ Claude Code found') : red('✗ Claude Code not found') + dim(': install it and run `claude login`, the agents need it')}\n`)
 
-  type Pick = 'plain' | 'run' | 'install' | 'site'
+  type Pick = 'plain' | 'run' | 'install' | 'site' | 'mfe'
   const choices: { label: string; hint?: string; value: Pick }[] = []
   if (project.installed && project.dev) choices.push({ label: 'Start the dev server', hint: `pinwright is in the project already (${dev})`, value: 'plain' })
-  choices.push({ label: 'Run it now', hint: 'nothing is installed in the project', value: 'run' })
+  if (project.mfe) choices.push({ label: 'Review it inside its shell', hint: 'the overlay rides in this microfrontend, nothing installed', value: 'mfe' })
+  choices.push({ label: 'Run it now', hint: project.mfe ? 'on its own dev server, nothing installed' : 'nothing is installed in the project', value: 'run' })
   if (project.js && !project.installed && claude)
     choices.push({ label: 'Add it to the project', hint: project.pluggable ? `Claude Code installs and wires the ${project.name} plugin` : 'Claude Code makes your dev script start through pinwright', value: 'install' })
   choices.push({ label: 'Review a site that is already running', hint: 'you give its URL', value: 'site' })
@@ -193,6 +219,13 @@ async function wizard(root: string): Promise<Plan> {
 
   if (pick === 'plain') return { kind: 'plain', cmd: project.dev! }
   if (pick === 'site') return { kind: 'site', url: await ask('Site URL', 'http://localhost:3000') }
+  if (pick === 'mfe') {
+    let cmd = ''
+    while (!cmd) cmd = await ask('Dev command of this microfrontend', dev ?? '')
+    const scope = await ask('Notes only inside (CSS selector of its mount point, empty for the whole page)', '')
+    const shell = await ask('Shell URL', 'http://localhost:3000')
+    return { kind: 'run', cmd: cmd.split(/\s+/), mfe: { scope, shell } }
+  }
   if (pick === 'run') {
     let cmd = ''
     while (!cmd) cmd = await ask('Dev command', dev ?? '')

@@ -34,6 +34,8 @@ Ask with a multiple-choice question (in Claude Code, the AskUserQuestion tool), 
 3. **Add it to the project**: install pinwright so the usual dev script always starts with it. Only for projects
    with a `package.json` dev script.
 4. **Review a site that is already running**: they give its URL.
+5. **Review it inside its shell**: only for a Module Federation remote (its bundler config has `exposes`). Offer it
+   first in that case.
 
 Then follow the matching section below and nothing else.
 
@@ -124,6 +126,16 @@ usual from now on.
 
 Ask for the URL if they didn't give it (e.g. `http://localhost:3000`). Change no file. Tell the user to run
 `npx pinwright --target <url>` in their terminal: pinwright opens the site with the overlay on top.
+
+## 4e. Review it inside its shell
+
+Change no file. Ask for the CSS selector of the element the shell mounts this remote into (notes will only be
+allowed inside it; look for a mount wrapper or a `data-*` attribute naming the remote in the shell). Tell the user:
+
+1. run `npx pinwright --mfe --scope '<selector>' --port 4380` in this folder: it starts the remote's dev server;
+2. make the shell load this remote from `http://localhost:4380` instead of its own dev server port (wherever the
+   shell maps its remotes);
+3. open the shell as usual: the overlay comes with the remote.
 
 ## 5. Tell the user
 

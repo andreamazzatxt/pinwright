@@ -14,6 +14,8 @@ export interface Project {
   pluggable: boolean
   /** Has a package.json dev script pinwright can be added to. */
   js: boolean
+  /** A Module Federation remote (exposes modules to a shell). */
+  mfe: boolean
 }
 
 /** First match wins: meta-frameworks before the bundlers they're built on. */
@@ -52,11 +54,23 @@ export function detectProject(root: string): Project {
     try {
       dev = devCommand(root)
     } catch {}
-    if (hit || dev) return { name: hit?.[1] ?? 'JavaScript project', dev, installed: !!deps.pinwright, pluggable: !!hit, js: !!dev }
+    if (hit || dev) return { name: hit?.[1] ?? 'JavaScript project', dev, installed: !!deps.pinwright, pluggable: !!hit, js: !!dev, mfe: isRemote(root) }
   }
   const other = OTHER.find(([file]) => existsSync(join(root, file)))
-  if (other) return { name: other[1], dev: other[2], installed: false, pluggable: false, js: false }
-  return { name: 'unknown project', dev: null, installed: false, pluggable: false, js: false }
+  if (other) return { name: other[1], dev: other[2], installed: false, pluggable: false, js: false, mfe: false }
+  return { name: 'unknown project', dev: null, installed: false, pluggable: false, js: false, mfe: false }
+}
+
+/** Exposes modules through Module Federation: the bundler config (or a federation config) has `exposes`. */
+function isRemote(root: string): boolean {
+  const files = ['module-federation.config', 'rsbuild.config', 'rspack.config', 'webpack.config', 'vite.config']
+  for (const f of files)
+    for (const ext of ['.ts', '.js', '.mjs', '.cjs', '.mts'])
+      try {
+        const text = readFileSync(join(root, f + ext), 'utf8')
+        if (/exposes\s*:/.test(text) && /federation/i.test(text)) return true
+      } catch {}
+  return false
 }
 
 /** Claude Code on PATH (the agents run through it). */
