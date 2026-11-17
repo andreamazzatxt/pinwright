@@ -20,28 +20,13 @@ page updates through your dev server's HMR.
 
 ## Set it up with Claude
 
-Open Claude Code in your project's folder and paste this. It installs pinwright, wires it into your
-framework and checks that it starts.
+Open Claude Code in your project's folder and paste this:
 
 ```text
-Set up pinwright (https://github.com/andreamazzatxt/pinwright) in this project, so I can leave notes on the
-dev site and Claude agents apply them to the code.
-
-1. Check that Node is >= 22.13 and that Claude Code is logged in. If it isn't, stop and tell me to run `claude login`.
-2. Install pinwright as a dev dependency, with the package manager this project already uses.
-3. Find the framework and wire pinwright in, dev mode only:
-   - Vite, SvelteKit, React Router, SolidStart, Qwik: add `pinwright()` from 'pinwright/vite' to the Vite plugins.
-   - Astro: add `pinwright()` from 'pinwright/astro' to `integrations`.
-   - Nuxt: add 'pinwright/nuxt' to `modules`.
-   - Next.js: wrap the exported config with `withPinwright` from 'pinwright/next', and render
-     `<Pinwright />` from 'pinwright/next/script' at the end of <body> in the root layout
-     (app router) or in pages/_document (pages router).
-   - Webpack 5, Rspack, Rsbuild: add `new PinwrightPlugin()` from 'pinwright/rspack' to `plugins`.
-   - Anything else: add a "pinwright" script running `pinwright --target <dev server URL>`.
-4. Change nothing else. Production builds must stay exactly as they are.
-5. Start the dev server and check its log prints "[pinwright] listening on …", then stop it.
-6. Tell me which URL to open and that I can hold ⌥ and click any element to leave a note.
+Set up pinwright in this project: follow https://raw.githubusercontent.com/andreamazzatxt/pinwright/main/SETUP.md
 ```
+
+Claude reads [SETUP.md](SETUP.md), installs pinwright, wires it into your framework and checks that it starts.
 
 ## Manual setup
 
