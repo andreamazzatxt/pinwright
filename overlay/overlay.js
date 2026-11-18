@@ -28,6 +28,11 @@
       mode: 'Cosa non va? Cliccalo.',
       notesN: (n) => `Note ${n}`,
       write: 'Scrivi la nota…',
+      talk: 'Detta: tieni premuto ⌥ o clicca',
+      silent: 'Non hai detto niente',
+      listening: 'Ti ascolto… rilascia ⌥ per salvare',
+      micDenied: 'Microfono bloccato: consentilo dalla barra degli indirizzi.',
+      micError: (e) => `Dettatura non riuscita (${e}).`,
       cancel: 'Annulla',
       save: 'Salva',
       close: 'Chiudi',
@@ -83,6 +88,11 @@
       mode: 'What’s off? Click it.',
       notesN: (n) => `Notes ${n}`,
       write: 'Write the note…',
+      talk: 'Dictate: hold ⌥ or click',
+      silent: 'You didn’t say anything',
+      listening: 'Listening… let go of ⌥ to save',
+      micDenied: 'Microphone blocked: allow it from the address bar.',
+      micError: (e) => `Dictation failed (${e}).`,
       cancel: 'Cancel',
       save: 'Save',
       close: 'Close',
@@ -257,6 +267,16 @@
   .row{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:8px}
   .row button:not(.ib){padding:8px 14px;border:0;border-radius:999px;background:#eef1f5;color:#121318}
   .row .ok{background:#121318;color:#fff}
+  .form .row .mic{margin-right:auto}
+  .row .mic svg{width:16px;height:16px}
+  .card[data-shake]{animation:shake .4s ease-in-out}
+  @keyframes shake{20%,60%{translate:-6px 0}40%,80%{translate:6px 0}}
+  .nudge{position:fixed;z-index:3;translate:-50% 0;padding:6px 12px;border-radius:999px;background:#121318;color:#fff;font-size:12px;white-space:nowrap;box-shadow:0 6px 18px rgb(0 0 0/.25);animation:pop .18s ease-out}
+  @keyframes pop{from{opacity:0;translate:-50% -4px}}
+  @media (prefers-reduced-motion:reduce){.card[data-shake],.nudge{animation:none}}
+  .row .mic[data-on]{background:#c4243f;color:#fff;animation:rec 1.2s ease-in-out infinite}
+  @keyframes rec{50%{box-shadow:0 0 0 6px rgb(196 36 63/.2)}}
+  @media (prefers-reduced-motion:reduce){.row .mic[data-on]{animation:none}}
   .row .del{margin-right:auto;background:none;color:#c4243f}
   .row .del[data-sure]{background:#c4243f;color:#fff}
   .head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
@@ -342,6 +362,7 @@
     retry: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
     terminal: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
     send: '<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><path d="M12 18v4"/>',
     link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
   }
   const svg = (name) => {
@@ -869,7 +890,17 @@
     (e) => {
       lastPointer = { x: e.clientX, y: e.clientY }
       sendCursor()
-      if (held && !fromUs(e)) highlight(e.target)
+      // The key itself may never reach the page (focus in the address bar, an iframe, a handler that swallows it):
+      // the pointer still says whether ⌥ is down.
+      const alt = e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey
+      if (alt !== held) {
+        held = alt
+        if (!active()) hl.style.display = 'none'
+        render()
+      }
+      // ⌥'s keyup can be lost (the microphone prompt takes the focus): the pointer tells it's up.
+      if (voice && voice.hold && !e.altKey) releaseTalk()
+      if (held && !voice && !fromUs(e)) highlight(e.target)
     },
     { passive: true, capture: true },
   )
@@ -1100,9 +1131,9 @@
   hub.addEventListener('click', (e) => {
     e.stopPropagation()
     if (isOpen) return
-    if (on) return setOn(false)
+    // First click: note mode, compact, so the page stays visible. A second click opens the list (and Go live).
+    if (on) return setOpen(true)
     setOn(true)
-    setOpen(true)
   })
 
   const fromUs = (e) => e.composedPath().includes(host)
@@ -1110,23 +1141,31 @@
     const t = e.composedPath()[0]
     return t && t.nodeType === 1 && (t.closest('textarea,input,select,[contenteditable=""],[contenteditable=true]') || t.isContentEditable)
   }
-  document.addEventListener('keyup', (e) => {
-    if (e.key !== 'Alt' || !held) return
+  const isAlt = (e) => e.key === 'Alt' || e.key === 'AltGraph'
+  // On window, capturing: the page's own key handlers can't stop these first.
+  addEventListener('keyup', (e) => {
+    if (isAlt(e)) releaseTalk()
+    if (!isAlt(e) || !held) return
     held = false
     if (!active()) hl.style.display = 'none'
     render()
-  })
-  document.addEventListener('keydown', (e) => {
-    // Hold ⌥ (alone): the cursor turns into a pin and a click drops a note.
-    if (e.key === 'Alt' && !e.repeat && !e.metaKey && !e.ctrlKey && !e.shiftKey && !typing(e)) {
+  }, true)
+  addEventListener(
+    'keydown',
+    (e) => {
+      // Hold ⌥ (alone): the cursor turns into a pin and a click drops a note.
+      if (!isAlt(e) || e.repeat || e.metaKey || e.ctrlKey || e.shiftKey || typing(e)) return
       held = true
       if (lastPointer) {
         const t = document.elementFromPoint(lastPointer.x, lastPointer.y)
         if (t && t !== host) highlight(t)
       }
       render()
-      return
-    }
+    },
+    true,
+  )
+  document.addEventListener('keydown', (e) => {
+    if (isAlt(e)) return
     if (e.code === 'KeyN' && e.altKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault()
       return setOn(!on)
@@ -1184,17 +1223,127 @@
     true,
   )
 
+  // --- dictation: the browser's speech recognition (Chrome, Edge, Safari), into the note being written.
+  const Speech = window.SpeechRecognition || window.webkitSpeechRecognition
+  /** The dictation going on, if any: the box it fills, its recognizer once started, and the ⌥ hold timer. */
+  let voice = null
+
+  /** ⌥ went down in a note box (or was still down when it opened): held a moment, it starts dictation. */
+  function holdToTalk(ta) {
+    if (!Speech || voice) return
+    voice = { ta, rec: null, hold: true, timer: setTimeout(() => startVoice(ta, true), 350) }
+  }
+  /** ⌥ came up, or another key went down with it (⌥ also types characters): no dictation, or the end of it. */
+  function releaseTalk() {
+    if (!voice) return
+    clearTimeout(voice.timer)
+    if (voice.rec) voice.rec.stop()
+    else voice = null
+  }
+
+  /** `hold`: started by holding ⌥, so letting go of ⌥ ends it and saves what was said. */
+  function startVoice(ta, hold = false) {
+    if (!ta.isConnected) return void (voice = null)
+    const rec = new Speech()
+    rec.lang = navigator.language || 'en-US'
+    rec.continuous = true
+    rec.interimResults = true
+    voice = { ta, rec, hold, timer: null }
+    const mic = ta.parentNode?.querySelector('.mic')
+    const placeholder = ta.placeholder
+    // What was typed stays; what is said goes after it.
+    const base = ta.value.trim() ? `${ta.value.trimEnd()} ` : ''
+    /** Whether any words came; what went wrong, if something did (null: nothing to say, e.g. aborted). */
+    let spoke = false
+    let failed = false
+    let problem = null
+    rec.onresult = (e) => {
+      let said = ''
+      for (const r of e.results) said += r[0].transcript
+      spoke = spoke || Boolean(said.trim())
+      ta.value = base + said.trim()
+    }
+    rec.onerror = (e) => {
+      if (e.error === 'no-speech') return
+      failed = true
+      if (e.error === 'aborted') return
+      problem = e.error === 'not-allowed' || e.error === 'service-not-allowed' ? T.micDenied : T.micError(e.error)
+      // Clicked on: the message stays in the card. Held: it comes as a nudge when ⌥ is let go.
+      if (hold) return
+      ta.parentNode?.querySelector('.err')?.remove()
+      ta.parentNode?.append(h('p.err', { text: problem }))
+    }
+    rec.onend = () => {
+      if (voice && voice.rec === rec) voice = null
+      if (hold && ta.isConnected) {
+        // Push to talk: let go and the note is saved as it is (the final words arrive just before this).
+        if (spoke && !failed && ta.submit) return void ta.submit(ta.value.trim())
+        if (!failed || problem) nudge(ta.closest('.card'), problem || T.silent)
+      }
+      mic?.removeAttribute('data-on')
+      ta.placeholder = placeholder
+      if (ta.isConnected) {
+        ta.focus()
+        ta.setSelectionRange(ta.value.length, ta.value.length)
+      }
+    }
+    mic?.setAttribute('data-on', '')
+    ta.placeholder = T.listening
+    try {
+      rec.start()
+    } catch {
+      voice = null
+      mic?.removeAttribute('data-on')
+    }
+  }
+
+  /** Nothing to save: the card shakes and says why, just below it, for a moment. */
+  function nudge(card, text) {
+    if (!card) return
+    root.querySelector('.nudge')?.remove()
+    // In the shadow root, not the card: a panel scrolls and would clip it.
+    const r = card.getBoundingClientRect()
+    const below = r.bottom + 44 < innerHeight
+    const tip = h('div.nudge', { role: 'status', text })
+    tip.style.left = `${r.left + r.width / 2}px`
+    tip.style.top = below ? `${r.bottom + 8}px` : `${r.top - 38}px`
+    root.append(tip)
+    card.removeAttribute('data-shake')
+    card.offsetWidth
+    card.setAttribute('data-shake', '')
+    setTimeout(() => tip.remove(), 2600)
+  }
+
+  /** The mic button next to a note box: click to start, click again to stop. Absent where the browser can't. */
+  function micButton(ta) {
+    if (!Speech) return null
+    return ib('mic', T.talk, (e) => {
+      e.stopPropagation()
+      if (voice && voice.ta === ta) return releaseTalk()
+      releaseTalk()
+      startVoice(ta)
+    }, '.mic')
+  }
+
   /** A card with a textarea: Enter submits, Shift+Enter breaks the line, Esc closes. */
   function textBox(placeholder, onSubmit, onEscape) {
     const ta = h('textarea', { placeholder })
+    ta.submit = onSubmit
     ta.addEventListener('keydown', (e) => {
       e.stopPropagation()
+      if (isAlt(e)) {
+        if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.shiftKey) holdToTalk(ta)
+        return
+      }
+      // ⌥ + a key types a character (@, [, …): that's not a hold.
+      if (voice && !voice.rec) releaseTalk()
       if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault()
         onSubmit(ta.value.trim())
       }
       if (e.key === 'Escape') {
         e.preventDefault()
+        if (voice && voice.ta === ta) voice.rec?.abort()
         onEscape()
       }
     })
@@ -1221,12 +1370,14 @@
       'div.card.form.ui',
       {},
       ta,
-      h('div.row', {}, h('button', { text: T.cancel, onclick: close }), h('button.ok', { text: T.save, onclick: () => save(ta.value.trim()) })),
+      h('div.row', {}, micButton(ta), h('button', { text: T.cancel, onclick: close }), h('button.ok', { text: T.save, onclick: () => save(ta.value.trim()) })),
     )
     form.style.left = `${Math.max(8, Math.min(x, innerWidth - 330))}px`
     form.style.top = `${Math.max(8, Math.min(y + 18, innerHeight - 190))}px`
     root.append(form)
     ta.focus()
+    // ⌥ + click, and ⌥ still down: keep holding it and talk.
+    if (held) holdToTalk(ta)
   }
 
   // --- the panel on a pin.
@@ -1343,6 +1494,7 @@
     if (!running) {
       const ph = n.status === 'asking' ? T.answer : T.follow
       box = textBox(ph, (text) => act(() => send(text))({ currentTarget: box }), closePanel)
+      buttons.push(micButton(box))
       buttons.push(ib('send', n.status === 'asking' ? T.reply : T.send, act(() => send(box.value.trim())), '.ok'))
     }
 

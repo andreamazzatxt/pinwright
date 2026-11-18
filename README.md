@@ -179,6 +179,11 @@ All plugins take the same options as the config file: `pinwright({ port: 4350 })
 Hold **⌥** and click anywhere to drop a note; the cursor turns into a pin while ⌥ is down. Or press **N** to
 enter note mode, then click.
 
+**Say it instead.** Keep holding ⌥ after the click and talk: the note fills in as you speak, and letting go
+of ⌥ saves it as it is. Holding ⌥ in any note or reply box does the same. The mic button starts and stops
+dictation with a click and leaves the text for you to edit. It uses the browser's speech recognition (Chrome,
+Edge, Safari) in your browser's language; in Chrome the audio goes to Google's speech service.
+
 A small local daemon queues the note and a Claude agent picks it up. The agent never stops to ask: if a note
 is ambiguous it picks the likeliest reading, applies it and says what it assumed. Reply on the pin ("not
 quite, make it smaller") and the same agent session resumes.
