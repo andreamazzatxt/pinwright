@@ -77,6 +77,11 @@ shell's URL and login don't change, and agents only edit the remote's code. `--s
 remote's mount point: notes can only be placed inside it (it's outlined while you place one), and the rest of the
 shell keeps working. `npx pinwright` offers this mode by itself when the folder is a Module Federation remote.
 
+**Go live** works here too: press it on the shell page and guests get the shell with the remote inside, all through
+the one link. pinwright passes the shell along and points every `localhost` address in it (the remote's URL, its
+assets and chunks) back at the link, so nothing a guest loads goes to `localhost`. The shell must run over plain
+`http` on this machine; `--shell <url>` names it if Go live is pressed elsewhere.
+
 ## Manual setup
 
 Requirements: Node ≥ 22.13 and Claude Code logged in (`claude login`). pinwright uses your Claude Code

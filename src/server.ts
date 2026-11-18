@@ -23,6 +23,19 @@ const isLocal = (origin: string | undefined) => {
   }
 }
 
+/** Microfrontend live session: where guests reach the remote, next to the shell they browse. */
+const MFE_PATH = '/__pw/mfe'
+const inMfe = (path: string) => path === MFE_PATH || path.startsWith(`${MFE_PATH}/`)
+
+/** Every way a page spells a local origin on that port: http://localhost:3000, //127.0.0.1:3000, http:\/\/[::1]:3000. */
+const localOrigin = (port: string) => new RegExp(`(?:https?:)?(?:\\\\?/){2}(?:localhost|127\\.0\\.0\\.1|\\[::1\\]):${port || 80}(?![0-9])`, 'g')
+
+/** The origin the browser used to reach this server: the tunnel's https address, or localhost. */
+const publicOrigin = (req: IncomingMessage) => {
+  const https = req.headers['x-forwarded-proto'] === 'https' || Boolean(req.headers['cf-connecting-ip'])
+  return `${https ? 'https' : 'http'}://${req.headers.host ?? 'localhost'}`
+}
+
 /** The list view: no html, styles or diff, which only the panel needs. */
 const light = (n: Note) => ({ ...n, html: undefined, styles: undefined, diff: undefined, hasDiff: Boolean(n.diff) })
 
@@ -59,6 +72,8 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
   /** The two links, once shared: `auto` runs every note, `review` waits for the host's approval. */
   let links: Record<'auto' | 'review', string> | null = null
   const sharePayload = () => ({ links: collab.sharing ? links : null })
+  /** Microfrontend: the shell's origin, set when the host goes live. */
+  let shellUrl: string | null = null
   bus.on('note', (n) => send('note', light(n)))
   bus.on('activity', (a) => send('activity', a))
   bus.on('reload', () => send('reload', {}))
@@ -87,6 +102,12 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
       if (isRemote(req)) throw new OpError('only the host can share', 403)
       if (m === 'POST') {
         const b = await readBody(req)
+        if (cfg.mfe) {
+          // Guests get the shell with the remote inside, as the host sees it: the page Go live was pressed on.
+          const o = cfg.shell ?? req.headers.origin
+          if (!o || new URL(o).port === String(cfg.port)) throw new OpError('Go live needs the shell: press it on the shell page, or start pinwright with --shell <url>')
+          shellUrl = new URL(o).origin
+        }
         const { url: base, tokens } = await collab.share()
         const page = typeof b.page === 'string' && b.page.startsWith('/') ? b.page : '/'
         const link = (t: string) => `${base}${page}${page.includes('?') ? '&' : '?'}pw=${t}`
@@ -182,6 +203,49 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
     json(res, { error: 'not found' }, 404)
   }
 
+  /** Where a proxied request goes, and what changes on the way back. */
+  interface Route {
+    target: URL
+    path: string
+    /** Adds the overlay tag to pages. */
+    html: boolean
+    /** Microfrontend: appends the overlay loader to scripts, which is how it gets into the shell. */
+    js: boolean
+    /** The overlay's address, as the browser asking can reach it. */
+    overlay: string
+    /** Rewrites text bodies and redirects, so a guest's browser never asks for localhost. */
+    rewrite?: (s: string) => string
+    /** Tried when the target answers 404 (GET only): what the shell's dev server lacks may be the remote's. */
+    fallback?: () => Route
+  }
+
+  /**
+   * Microfrontend live session: guests on the tunnel get the shell, with the remote under MFE_PATH, and every
+   * local address in what they're sent pointed back at the tunnel. Null for everyone else.
+   */
+  function guestRoutes(req: IncomingMessage, t: URL): { shell: (path: string) => Route; remote: (path: string) => Route } | null {
+    if (!cfg.mfe || !shellUrl || !isRemote(req)) return null
+    const shell = new URL(shellUrl)
+    const origin = publicOrigin(req)
+    const overlay = `${origin}${SCRIPT_PATH}`
+    const toRemote = localOrigin(t.port)
+    const toDaemon = localOrigin(String(cfg.port))
+    const toShell = localOrigin(shell.port)
+    const remote = (path: string): Route => ({ target: t, path, html: false, js: true, overlay, rewrite: (s) => s.replace(toRemote, origin + MFE_PATH) })
+    return {
+      remote,
+      shell: (path) => ({
+        target: shell,
+        path,
+        html: false,
+        js: false,
+        overlay,
+        rewrite: (s) => s.replace(toDaemon, origin + MFE_PATH).replace(toShell, origin),
+        fallback: req.method === 'GET' ? () => remote(path) : undefined,
+      }),
+    }
+  }
+
   function proxy(req: IncomingMessage, res: ServerResponse): void {
     const target = cfg.target ?? cfg.siteUrl
     if (!target) {
@@ -189,6 +253,14 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
       return void res.end(`pinwright is running on ${cfg.root}.\nNo --target: the overlay is served at ${SCRIPT_PATH}.\n`)
     }
     const t = new URL(target)
+    const path = req.url ?? '/'
+    const guest = guestRoutes(req, t)
+    if (guest) return forward(req, res, inMfe(path) ? guest.remote(path.slice(MFE_PATH.length) || '/') : guest.shell(path))
+    forward(req, res, { target: t, path, html: true, js: cfg.mfe, overlay: `${publicOrigin(req)}${SCRIPT_PATH}` })
+  }
+
+  function forward(req: IncomingMessage, res: ServerResponse, r: Route): void {
+    const t = r.target
     const headers = { ...req.headers, host: t.host, 'accept-encoding': 'identity' }
     // The share token is ours, not the site's.
     const site = (req.headers.cookie ?? '').split(';').filter((c) => !c.trim().startsWith('pw_t=')).join(';').trim()
@@ -196,57 +268,58 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
     else delete headers.cookie
     delete headers['if-none-match']
     delete headers['if-modified-since']
-    const up = http.request({ host: t.hostname, port: t.port || 80, path: req.url, method: req.method, headers }, (r) => {
-      const h = { ...r.headers }
-      if (typeof h.location === 'string' && h.location.startsWith(t.origin)) h.location = h.location.slice(t.origin.length) || '/'
-      const type = r.headers['content-type'] ?? ''
-      const html = type.includes('text/html')
-      // Microfrontend: the shell loads this server's JavaScript, not its HTML, so the overlay loader goes there.
-      const js = cfg.mfe && /javascript/.test(type) && !/\.hot-update\.js(\?|$)/.test(req.url ?? '') && (r.statusCode ?? 200) < 300
-      if (js && req.method !== 'HEAD') {
-        const chunks: Buffer[] = []
-        r.on('data', (c: Buffer) => chunks.push(c))
-        r.on('end', () => {
-          const own = `http://${req.headers.host ?? `127.0.0.1:${cfg.port}`}${SCRIPT_PATH}`
-          // Appended, so source maps keep their line numbers.
-          const body = Buffer.concat([Buffer.concat(chunks), Buffer.from(`\n;${loaderCode(own)}\n`)])
-          delete h['content-length']
-          delete h.etag
-          delete h['content-encoding']
-          h['cache-control'] = 'no-store'
-          res.writeHead(r.statusCode ?? 200, h)
-          res.end(body)
-        })
-        r.on('error', () => res.destroy())
-        return
+    // A guest's page lives on the tunnel; to the dev server it must look like its own.
+    if (r.rewrite && headers.origin) headers.origin = t.origin
+    const up = http.request({ host: t.hostname, port: t.port || 80, path: r.path, method: req.method, headers }, (u) => {
+      const status = u.statusCode ?? 502
+      if (r.fallback && status === 404) {
+        u.resume()
+        return forward(req, res, r.fallback())
       }
-      if (!html || req.method === 'HEAD') {
-        res.writeHead(r.statusCode ?? 502, h)
-        return void r.pipe(res)
+      const h = { ...u.headers }
+      if (typeof h.location === 'string') {
+        if (r.rewrite) h.location = r.rewrite(h.location)
+        if (h.location.startsWith(t.origin)) h.location = h.location.slice(t.origin.length) || '/'
+      }
+      const type = String(u.headers['content-type'] ?? '')
+      const html = r.html && type.includes('text/html')
+      const js = r.js && /javascript/.test(type) && !/\.hot-update\.js(\?|$)/.test(r.path) && status < 300
+      const text = Boolean(r.rewrite) && /text\/|javascript|json/.test(type)
+      if (req.method === 'HEAD' || !(html || js || text)) {
+        res.writeHead(status, h)
+        return void u.pipe(res)
       }
       const chunks: Buffer[] = []
-      r.on('data', (c: Buffer) => chunks.push(c))
-      r.on('end', () => {
+      u.on('data', (c: Buffer) => chunks.push(c))
+      u.on('end', () => {
         let s = Buffer.concat(chunks).toString('utf8')
-        const tag = `<script src="${SCRIPT_PATH}" defer></script>`
-        const i = s.lastIndexOf('</body>')
-        s = i >= 0 ? s.slice(0, i) + tag + s.slice(i) : s + tag
+        if (r.rewrite) s = r.rewrite(s)
+        if (html) {
+          const tag = `<script src="${SCRIPT_PATH}" defer></script>`
+          const i = s.lastIndexOf('</body>')
+          s = i >= 0 ? s.slice(0, i) + tag + s.slice(i) : s + tag
+        }
+        // Appended, so source maps keep their line numbers.
+        if (js) s += `\n;${loaderCode(r.overlay)}\n`
         // The overlay changes without the page changing: never let the browser reuse an old copy.
-        h['cache-control'] = 'no-store'
+        if (html || js) h['cache-control'] = 'no-store'
         delete h['content-length']
+        delete h['content-encoding']
         delete h.etag
         delete h['last-modified']
-        res.writeHead(r.statusCode ?? 200, h)
+        res.writeHead(status, h)
         res.end(s)
       })
-      r.on('error', () => res.destroy())
+      u.on('error', () => res.destroy())
     })
     up.on('error', () => {
       if (res.headersSent) return void res.destroy()
       res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8' })
-      res.end(`pinwright: ${target} is not reachable. Start the site there, then reload.`)
+      res.end(`pinwright: ${t.origin} is not reachable. Start the site there, then reload.`)
     })
-    req.pipe(up)
+    // A fallback asks again, so its request carries no body (GET).
+    if (r.fallback || req.readableEnded) up.end()
+    else req.pipe(up)
   }
 
   const server = http.createServer((req, res) => {
@@ -263,7 +336,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
       res.writeHead(302, { 'set-cookie': collab.cookie(req, token), location: url.pathname + url.search, 'cache-control': 'no-store' })
       return void res.end()
     }
-    if (!url.pathname.startsWith('/__pw/')) return proxy(req, res)
+    if (!url.pathname.startsWith('/__pw/') || inMfe(url.pathname)) return proxy(req, res)
     const origin = req.headers.origin
     // Local pages must come from localhost; remote ones already proved the token (SameSite cookie).
     if (!isRemote(req) && !isLocal(origin)) return json(res, { error: 'forbidden origin' }, 403)
@@ -329,12 +402,19 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
     const url = new URL(req.url ?? '/', 'http://x')
     if (collab.authorized(req, url.searchParams) !== 'ok') return void socket.destroy()
     if (url.pathname === '/__pw/ws') return live(req, socket, url)
-    // HMR and other websockets go straight through to the target.
+    // HMR and other websockets go straight through to the target (for a microfrontend guest: shell or remote).
     const target = cfg.target ?? cfg.siteUrl
     if (!target) return void socket.destroy()
-    const t = new URL(target)
+    let t = new URL(target)
+    let path = req.url ?? '/'
+    const guest = guestRoutes(req, t)
+    if (guest) {
+      const r = inMfe(path) ? guest.remote(path.slice(MFE_PATH.length) || '/') : guest.shell(path)
+      t = r.target
+      path = r.path
+    }
     const up = net.connect(Number(t.port || 80), t.hostname, () => {
-      const lines = [`${req.method} ${req.url} HTTP/1.1`]
+      const lines = [`${req.method} ${path} HTTP/1.1`]
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         const k = req.rawHeaders[i]
         const lk = k.toLowerCase()

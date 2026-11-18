@@ -135,7 +135,8 @@ allowed inside it; look for a mount wrapper or a `data-*` attribute naming the r
 1. run `npx pinwright --mfe --scope '<selector>' --port 4380` in this folder: it starts the remote's dev server;
 2. make the shell load this remote from `http://localhost:4380` instead of its own dev server port (wherever the
    shell maps its remotes);
-3. open the shell as usual: the overlay comes with the remote.
+3. open the shell as usual: the overlay comes with the remote. **Go live**, pressed on the shell page, shares the
+   shell with the remote inside.
 
 ## 5. Tell the user
 

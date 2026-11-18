@@ -47,6 +47,11 @@ export interface Config {
    * rides along in the remote's JavaScript instead of the HTML, so it shows up wherever the shell mounts it.
    */
   mfe: boolean
+  /**
+   * Microfrontend mode: the shell that loads the remote (e.g. http://localhost:3000). A live session shares it, with
+   * the remote inside. Default: the page Go live is pressed on.
+   */
+  shell?: string
   /** cloudflared binary for live-session links. Default: on PATH, else downloaded once to ~/.cache/pinwright. */
   cloudflared?: string
   /** Who launched the daemon: the CLI installs process-wide handlers, plugins must not. */

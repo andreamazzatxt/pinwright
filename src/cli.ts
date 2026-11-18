@@ -27,7 +27,7 @@ Options:
   -y, --yes          no questions: run the dev script straight away
   --mfe              microfrontend: the overlay rides in this remote's JavaScript, inside your shell
   --scope <css>      notes only inside matching elements, e.g. '[data-mfe="checkout"]'
-  --shell <url>      with --mfe: the shell page to open
+  --shell <url>      with --mfe: the shell page to open, and the one Go live shares
   --root <dir>       project root (default: cwd)
   --rebuild <cmd>    command to run after edits (sites without HMR)
   --agents <n>       max parallel agents (default 3)
@@ -162,6 +162,7 @@ async function start(): Promise<void> {
     target: siteArg,
     mfe,
     scope,
+    shell: shell || undefined,
     rebuild: v.rebuild,
     maxAgents: num(v.agents),
     models: v.model ? { worker: v.model } : undefined,
