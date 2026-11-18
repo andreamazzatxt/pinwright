@@ -38,10 +38,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      # npm install, not ci: a lockfile written on macOS lists Rspack's native builds for other systems without a
-      # version (an npm bug), and ci refuses it. install resolves the ones this runner needs.
+      # No lockfile for the fixtures (exact versions in their package.json): npm writes the native builds of
+      # other systems into a lockfile without a version, and then can't install from it there.
       - run: npm install --prefix test/e2e --no-audit --no-fund
-      - if: failure()
-        run: npm --version && tail -n 60 ~/.npm/_logs/*-debug-0.log
       # Chrome comes with the runner image.
       - run: npm --prefix test/e2e test

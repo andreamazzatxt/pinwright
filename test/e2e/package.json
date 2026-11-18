@@ -8,12 +8,12 @@
     "test": "node --test --test-concurrency=1 --test-timeout=600000 overlay.test.mjs frameworks.test.mjs mfe.test.mjs"
   },
   "devDependencies": {
-    "@module-federation/runtime-tools": "^2.9.3",
-    "@rsbuild/core": "^2.3.3",
+    "@module-federation/runtime-tools": "2.9.3",
+    "@rsbuild/core": "2.3.3",
     "next": "16.4.6",
     "playwright-core": "1.63.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "vite": "^8.3.8"
+    "vite": "8.3.8"
   }
 }
