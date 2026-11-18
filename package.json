@@ -1,6 +1,6 @@
 {
   "name": "pinwright",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Give Claude feedback right on your dev site: click an element, write a note, an agent edits your source.",
   "type": "module",
   "license": "MIT",

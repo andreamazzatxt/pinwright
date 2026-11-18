@@ -28,12 +28,33 @@ export interface Peer {
   page: string | null
 }
 
-/** Whether a request reached the daemon from outside this machine (through the tunnel, or another host). */
+/** localhost, 127.0.0.1, [::1] or *.localhost, with or without a port. */
+export function isLocalHost(host: string | undefined): boolean {
+  const h = (host ?? '').replace(/:\d+$/, '').toLowerCase()
+  return !h || h === 'localhost' || h.endsWith('.localhost') || h === '127.0.0.1' || h === '[::1]'
+}
+
+/**
+ * Whether a request reached the daemon from outside this machine: another host, a tunnel that marks the real
+ * client (cloudflared and most tunnels), or any request naming a host other than localhost. That last one covers a tunnel
+ * that adds no header, and a site that points its own name at 127.0.0.1 (DNS rebinding): both need the token.
+ */
 export function isRemote(req: IncomingMessage): boolean {
   const a = req.socket.remoteAddress ?? ''
   const loopback = a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1'
-  // cloudflared connects from localhost but marks the real client.
-  return !loopback || Boolean(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'])
+  return !loopback || Boolean(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']) || !isLocalHost(req.headers.host)
+}
+
+/** The origin the browser used to reach the daemon: the public URL's when it names that host, else from the headers. */
+export function publicOrigin(req: IncomingMessage, cfg: Pick<Config, 'publicUrl'>): string {
+  const host = req.headers.host ?? 'localhost'
+  if (cfg.publicUrl) {
+    const pub = new URL(cfg.publicUrl)
+    if (pub.host === host) return pub.origin
+  }
+  const proto = req.headers['x-forwarded-proto']
+  const https = proto ? proto === 'https' : Boolean(req.headers['cf-connecting-ip'])
+  return `${https ? 'https' : 'http'}://${host}`
 }
 
 const readCookie = (req: IncomingMessage, name: string) =>
@@ -87,7 +108,7 @@ export class Collab {
 
   /** The cookie for the token in the link (the request was just `authorized` as 'set-cookie'). */
   cookie(req: IncomingMessage, token: string): string {
-    const https = req.headers['x-forwarded-proto'] === 'https' || Boolean(req.headers['cf-connecting-ip'])
+    const https = publicOrigin(req, this.cfg).startsWith('https:')
     return `pw_t=${token}; Path=/; HttpOnly; SameSite=Lax${https ? '; Secure' : ''}`
   }
 
@@ -145,29 +166,47 @@ export class Collab {
     return [...this.peers.values()]
   }
 
-  /** Opens the tunnel (once) and returns the public base URL; the caller adds the page and a token. */
+  /**
+   * Opens the tunnel (once) and returns the public base URL; the caller adds the page and a token.
+   * - publicUrl: nothing opens, the tunnel is the user's; only the tokens make the links.
+   * - tunnel + hostname: the user's named Cloudflare tunnel, its hostname already routed to it.
+   * - otherwise a Cloudflare quick tunnel, on a new random host each time.
+   */
   async share(): Promise<{ url: string; tokens: Record<'auto' | 'review', string> }> {
     const tok = () => randomBytes(18).toString('base64url')
     this.tokens ??= { auto: tok(), review: tok() }
     const tokens = this.tokens
+    if (this.cfg.publicUrl) {
+      this.url = new URL(this.cfg.publicUrl).origin
+      if (this.announced !== this.url) this.cfg.log(`sharing at ${this.url} (your tunnel)`)
+      await this.announce()
+      return { url: this.url, tokens }
+    }
     if (this.url && this.tunnel && this.tunnel.exitCode === null) return { url: this.url, tokens }
+    const { tunnel: named, hostname } = this.cfg
+    if (named && !hostname) throw new Error('a named tunnel needs its hostname (--hostname), the one routed to it')
     const bin = await resolveCloudflared({ configured: this.cfg.cloudflared, log: this.cfg.log })
+    const local = `http://127.0.0.1:${this.cfg.port}`
+    // A quick tunnel prints its URL; a named one says when it's connected, and its URL is the hostname.
+    const [args, ready] = named
+      ? [['tunnel', '--no-autoupdate', 'run', '--url', local, named], /Registered tunnel connection/]
+      : [['tunnel', '--no-autoupdate', '--url', local], /(https:\/\/[a-z0-9-]+\.trycloudflare\.com)/]
     this.url = await new Promise<string>((ok, fail) => {
       let out = ''
       let p: ChildProcess
       try {
-        p = spawn(bin, ['tunnel', '--no-autoupdate', '--url', `http://127.0.0.1:${this.cfg.port}`], { stdio: ['ignore', 'pipe', 'pipe'] })
+        p = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] })
       } catch (e) {
         return fail(e)
       }
       this.tunnel = p
-      const timer = setTimeout(() => fail(new Error('cloudflared did not give a URL within 30 s')), 30_000)
+      const timer = setTimeout(() => fail(new Error(`cloudflared did not ${named ? 'connect' : 'give a URL'} within 30 s`)), 30_000)
       const read = (b: Buffer) => {
         out = (out + b.toString()).slice(-4000)
-        const m = out.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/)
+        const m = out.match(ready)
         if (m) {
           clearTimeout(timer)
-          ok(m[0])
+          ok(named ? `https://${hostname!.replace(/^https?:\/\//, '').replace(/\/.*$/, '')}` : m[1])
         }
       }
       p.stdout?.on('data', read)
@@ -186,16 +225,54 @@ export class Collab {
       })
     })
     this.cfg.log(`sharing at ${this.url}`)
+    await this.announce()
     return { url: this.url, tokens }
   }
 
-  /** Closes the tunnel and voids both links: the next share gets new tokens. */
-  unshare(): void {
+  /** The URL onShare was last told about: it hears about each new one once. */
+  private announced: string | null = null
+
+  private async announce(): Promise<void> {
+    if (!this.url || this.announced === this.url) return
+    this.announced = this.url
+    await runHook(this.cfg, 'onShare', this.url)
+  }
+
+  /** Closes the tunnel and voids both links (even when the tunnel is the user's): the next share gets new tokens. */
+  async unshare(): Promise<void> {
     if (!this.tokens && !this.tunnel) return
     this.tunnel?.kill('SIGTERM')
+    const url = this.announced
     this.tunnel = null
     this.url = null
     this.tokens = null
+    this.announced = null
     this.cfg.log('sharing stopped')
+    if (url) await runHook(this.cfg, 'onUnshare', url)
+  }
+}
+
+/**
+ * Tells the user's own setup that a share opened or closed, e.g. to add the public URL to a login's allowed
+ * redirects and take it out again. A function gets the URL; a shell command gets it as PINWRIGHT_URL. A hook that
+ * fails is logged, never fatal: the share itself works without it.
+ */
+async function runHook(cfg: Config, name: 'onShare' | 'onUnshare', url: string): Promise<void> {
+  const hook = cfg[name]
+  if (!hook) return
+  try {
+    if (typeof hook === 'function') return void (await hook(url))
+    await new Promise<void>((ok, fail) => {
+      const p = spawn(hook, { shell: true, cwd: cfg.root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, PINWRIGHT_URL: url, PINWRIGHT_PORT: String(cfg.port) } })
+      let out = ''
+      p.stdout?.on('data', (b: Buffer) => (out = (out + b).slice(-2000)))
+      p.stderr?.on('data', (b: Buffer) => (out = (out + b).slice(-2000)))
+      const timer = setTimeout(() => (p.kill('SIGTERM'), fail(new Error('took more than 60 s'))), 60_000)
+      p.on('error', (e) => (clearTimeout(timer), fail(e)))
+      p.on('exit', (code) => (clearTimeout(timer), code === 0 ? ok() : fail(new Error(`exited ${code}: ${out.trim().split('\n').slice(-2).join(' ')}`))))
+    })
+    cfg.log(`${name} done for ${url}`)
+  } catch (e) {
+    cfg.log(`${name} failed: ${(e as Error).message}`)
   }
 }

@@ -59,7 +59,7 @@ export async function startPinwright(opts: Options = {}): Promise<Pinwright> {
     },
     stop() {
       stopped ??= (async () => {
-        collab.unshare()
+        await collab.unshare()
         await scheduler.stop()
         await new Promise<void>((ok) => {
           server.close(() => ok())

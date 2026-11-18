@@ -79,8 +79,18 @@ shell keeps working. `npx pinwright` offers this mode by itself when the folder 
 
 **Go live** works here too: press it on the shell page and guests get the shell with the remote inside, all through
 the one link. pinwright passes the shell along and points every `localhost` address in it (the remote's URL, its
-assets and chunks) back at the link, so nothing a guest loads goes to `localhost`. The shell must run over plain
-`http` on this machine; `--shell <url>` names it if Go live is pressed elsewhere.
+assets and chunks) back at the link, so nothing a guest loads goes to `localhost`. Guests get the remote's
+changes as they happen: the remote's HMR socket goes through the link too (Rsbuild, webpack-dev-server, Rspack's
+dev server, Vite), so their page updates in place without a reload. If the shell's login only accepts known hosts, use a fixed address (see Live
+sessions).
+
+**When a hot update doesn't land.** A React remote redraws through React Refresh, which reaches the shell's React
+through the React DevTools hook. Without the DevTools extension the shell's own React Refresh makes a stand-in
+hook the remote can't reach React through, so new code arrives and nothing changes. pinwright notices (no redraw
+after a hot update) and shows a round button next to the notes button: a click reloads. Its tip says when the
+extension is what's missing. Guests are covered: pinwright puts a working hook in the shell it passes them. For
+your own tab, enable React DevTools, or add the same hook in the shell's dev `index.html`, before any script. The shell must run over plain `http` on this machine; `--shell <url>` names it if Go live is pressed
+elsewhere.
 
 ## Manual setup
 
@@ -179,6 +189,10 @@ All plugins take the same options as the config file: `pinwright({ port: 4350 })
 Hold **⌥** and click anywhere to drop a note; the cursor turns into a pin while ⌥ is down. Or press **N** to
 enter note mode, then click.
 
+**On a phone.** Tap the button, then tap what's off: the note opens there, sized to the screen and above the
+keyboard. Each tap on the button gives one note, so the page works as usual in between. The mic button
+dictates.
+
 **Say it instead.** Keep holding ⌥ after the click and talk: the note fills in as you speak, and letting go
 of ⌥ saves it as it is. Holding ⌥ in any note or reply box does the same. The mic button starts and stops
 dictation with a click and leaves the text for you to edit. It uses the browser's speech recognition (Chrome,
@@ -188,16 +202,25 @@ A small local daemon queues the note and a Claude agent picks it up. The agent n
 is ambiguous it picks the likeliest reading, applies it and says what it assumed. Reply on the pin ("not
 quite, make it smaller") and the same agent session resumes.
 
+**Keeping the page clear.** Notes in progress always show; of the done ones, the page keeps the five latest pins
+and the list the three latest. Press and hold a pin to hide it: it moves to the list, marked hidden, and a click
+there puts it back.
+
 The agent doesn't verify its own work: no screenshots, builds or tests. You are the check, looking at the
 page. That keeps notes fast and cheap. Set `ask: true` if you'd rather the agent ask a question (a `?` on
 the pin) than guess.
 
 ## Live sessions
 
-Open the notes list and press **Go live**. pinwright opens a Cloudflare quick tunnel and gives you a link with
+Press **Go live** in note mode or at the bottom of the notes list. pinwright opens a Cloudflare quick tunnel and gives you a link with
 a secret token. Anyone with the link (up to 8 people in all) sees the site and every note, adds notes and
 replies, and sees everyone's cursor, each with its own colour and a made-up name they can change. Guests only
 need a browser.
+
+Click someone's avatar to **Go to** them (their page, scrolled where they are) or **Follow** them: your view keeps
+up with theirs, page changes included, until you scroll yourself or press Esc. In a session your own pointer wears
+your colour, the one the others see, and while someone writes a note the others see a pin in their colour
+where it goes, with dots.
 
 The **YOLO mode** switch picks which link you copy. It's off every time the page loads.
 
@@ -215,6 +238,30 @@ approve, or read the daemon's status.
 pinwright uses the `cloudflared` on your PATH if there is one. Otherwise, on the first share it downloads
 Cloudflare's official build from their GitHub releases into `~/.cache/pinwright` (once per machine; on macOS
 the binary must carry Cloudflare's signature). Set `cloudflared` in the config to use your own binary.
+
+**A fixed address.** The quick tunnel gets a new random host on every share, which a login that only accepts known
+redirect URLs (OIDC, Keycloak…) will refuse. Give Go live an address you already authorized instead, either your
+named Cloudflare tunnel, which pinwright starts:
+
+```sh
+cloudflared tunnel create review                      # once
+cloudflared tunnel route dns review review.example.com # once
+npx pinwright --tunnel review --hostname review.example.com
+```
+
+or any tunnel you run yourself to pinwright's port, which pinwright leaves alone and only builds the links on:
+
+```sh
+npx pinwright --public-url https://review.example.com
+```
+
+The token in the links is what keeps the share private: **Stop** voids it, even while your tunnel stays up. Both
+work with `--mfe`: the same address serves the shell and the remote.
+
+**Hooks.** `onShare` and `onUnshare` in the config run when a share opens and closes: a shell command, with the
+public URL in `PINWRIGHT_URL`, or (in a JS config) a function of the URL. Use them for what lives outside
+pinwright, like adding the URL to a login's allowed redirects and taking it out again. A hook that fails is
+logged; the share works anyway.
 
 ## Guardrails
 
@@ -256,6 +303,10 @@ export default {
   instructions: '',                  // appended to the agent's system prompt
   guestDirs: ['src', 'public'],      // folder names guest notes may edit under (default: common source/asset dirs)
   cloudflared: '/path/to/cloudflared',
+  publicUrl: 'https://review.example.com', // Go live on your own tunnel to this port; none is opened
+  tunnel: 'review', hostname: 'review.example.com', // or your named Cloudflare tunnel, started by pinwright
+  onShare: './scripts/allow-redirect.sh',   // run when a share opens (URL in PINWRIGHT_URL), or a function
+  onUnshare: './scripts/drop-redirect.sh',  // and when it closes
   useApiKey: false,                  // use ANTHROPIC_API_KEY instead of `claude login`
 }
 ```
@@ -267,6 +318,8 @@ pinwright                          ask how to start (in a terminal), or run the 
 pinwright -- <command>             same, with your own dev command
 pinwright --target <url>           review a site that is already running
 pinwright --mfe --scope <css>      a microfrontend, reviewed inside its shell (see Microfrontends)
+pinwright --public-url <url>       Go live on your own fixed tunnel to pinwright's port
+pinwright --tunnel <name> --hostname <host>   Go live through your named Cloudflare tunnel
 pinwright list [--all]             notes in the running daemon
 pinwright take <id>                mark a note taken and print a prompt for an interactive session
 pinwright done <id> [summary]      close a note you handled by hand

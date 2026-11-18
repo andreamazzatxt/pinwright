@@ -3,7 +3,7 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import net from 'node:net'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isRemote, LINK_KINDS, type Access, type Collab } from './collab.js'
+import { isRemote, LINK_KINDS, publicOrigin as originOf, type Access, type Collab } from './collab.js'
 import type { Ctx } from './context.js'
 import { acceptWs, type WsConn } from './ws.js'
 import { OpError, type Ops } from './ops.js'
@@ -30,22 +30,57 @@ const inMfe = (path: string) => path === MFE_PATH || path.startsWith(`${MFE_PATH
 /** Every way a page spells a local origin on that port: http://localhost:3000, //127.0.0.1:3000, http:\/\/[::1]:3000. */
 const localOrigin = (port: string) => new RegExp(`(?:https?:)?(?:\\\\?/){2}(?:localhost|127\\.0\\.0\\.1|\\[::1\\]):${port || 80}(?![0-9])`, 'g')
 
-/** The origin the browser used to reach this server: the tunnel's https address, or localhost. */
-const publicOrigin = (req: IncomingMessage) => {
-  const proto = req.headers['x-forwarded-proto']
-  const https = proto ? proto === 'https' : Boolean(req.headers['cf-connecting-ip'])
-  return `${https ? 'https' : 'http'}://${req.headers.host ?? 'localhost'}`
+/**
+ * Dev servers' HMR clients get their socket as pieces (host, port, path), not as one URL the localhost rewrite
+ * would catch. For a guest the path moves under MFE_PATH and host and port fall back to the page's (the link).
+ */
+const HMR_CLIENTS: [RegExp, (m: string) => string][] = [
+  // Rsbuild: init(token, {"path": "/rsbuild-hmr", "port": 5604, "host": ""}, …)
+  [
+    /\{[^{}]*"path":\s*"\/rsbuild-hmr"[^{}]*\}/g,
+    (o) =>
+      o
+        .replace(/("path":\s*")\//, `$1${MFE_PATH}/`)
+        .replace(/("port":\s*)\d+/, '$10')
+        .replace(/("host":\s*)"[^"]*"/, '$1""'),
+  ],
+  // webpack-dev-server and Rspack's dev server: the client's resource query, ?protocol=ws%3A&hostname=…&port=…&pathname=%2Fws.
+  // hostname 0.0.0.0, port 0 and protocol auto: are the client's own "use the page's" values.
+  [
+    /\?protocol=[^"'`\s&]*&hostname=[^"'`\s&]*&port=\d*&pathname=%2F[^"'`\s&]*/g,
+    (q) =>
+      q
+        .replace(/protocol=[^&]*/, 'protocol=auto%3A')
+        .replace(/hostname=[^&]*/, 'hostname=0.0.0.0')
+        .replace(/port=\d*/, 'port=0')
+        .replace(/pathname=%2F/, `pathname=${encodeURIComponent(MFE_PATH)}%2F`),
+  ],
+  // Vite's /@vite/client: `${"localhost" || importMetaUrl.hostname}:${hmrPort || importMetaUrl.port}${"/"}`.
+  [
+    /`\$\{[^}]*\|\|\s*importMetaUrl\.hostname\}:\$\{hmrPort \|\| importMetaUrl\.port\}\$\{"([^"]*)"\}`/g,
+    (t) => t.replace(/^`\$\{[^}]*\|\|/, '`${null ||').replace(/\$\{"([^"]*)"\}`$/, (_, base: string) => `\${"${MFE_PATH}${base.startsWith('/') ? base : `/${base}`}"}\``),
+  ],
+  [/\bconst hmrPort = \d+;/g, () => 'const hmrPort = null;'],
+]
+
+export function guestHmr(s: string): { s: string; hit: boolean } {
+  let hit = false
+  for (const [re, fix] of HMR_CLIENTS)
+    s = s.replace(re, (m) => {
+      hit = true
+      return fix(m)
+    })
+  return { s, hit }
 }
 
 /**
- * DNS rebinding: a site whose name points at 127.0.0.1 reaches this server as its own origin. Local requests must
- * name localhost; through the tunnel the name is the tunnel's, and the share token guards those.
+ * React Refresh re-renders through React's DevTools hook, which react-dom joins only if the hook exists when it starts.
+ * A remote's refresh runtime arrives after the shell's react-dom, too late: the hot update lands and nothing redraws
+ * (unless the browser has React DevTools, which makes the hook first). So a guest's shell gets the same minimal hook
+ * React Refresh would make, before anything else runs; an existing one is left alone.
  */
-const hostOk = (req: IncomingMessage) => {
-  if (isRemote(req)) return true
-  const host = (req.headers.host ?? '').replace(/:\d+$/, '').toLowerCase()
-  return !host || host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '[::1]'
-}
+const REACT_HOOK =
+  '<script data-pinwright-react-hook>if(!window.__REACT_DEVTOOLS_GLOBAL_HOOK__){var i=0;window.__REACT_DEVTOOLS_GLOBAL_HOOK__={__pw:true,renderers:new Map(),supportsFiber:true,inject:function(r){var id=++i;this.renderers.set(id,r);return id},onScheduleFiberRoot:function(){},onCommitFiberRoot:function(){},onCommitFiberUnmount:function(){}}}</script>'
 
 /** The list view: no html, styles or diff, which only the panel needs. */
 const light = (n: Note) => ({ ...n, html: undefined, styles: undefined, diff: undefined, hasDiff: Boolean(n.diff) })
@@ -83,6 +118,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
   /** The two links, once shared: `auto` runs every note, `review` waits for the host's approval. */
   let links: Record<'auto' | 'review', string> | null = null
   const sharePayload = () => ({ links: collab.sharing ? links : null })
+  const publicOrigin = (req: IncomingMessage) => originOf(req, cfg)
   /** Microfrontend: the shell's origin, set when the host goes live. */
   let shellUrl: string | null = null
   bus.on('note', (n) => send('note', light(n)))
@@ -127,7 +163,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
         return json(res, sharePayload())
       }
       if (m === 'DELETE') {
-        collab.unshare()
+        await collab.unshare()
         links = null
         send('share', sharePayload(), (c) => !c.guest)
         // Guests lose access: their streams close and the old link stops working.
@@ -227,6 +263,8 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
     overlay: string
     /** Rewrites text bodies and redirects, so a guest's browser never asks for localhost. */
     rewrite?: (s: string) => string
+    /** Put at the top of <head> in pages (before any of their scripts). */
+    head?: string
     /** Tried when the target answers 404 (GET only): what the shell's dev server lacks may be the remote's. */
     fallback?: () => Route
   }
@@ -243,7 +281,14 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
     const toRemote = localOrigin(t.port)
     const toDaemon = localOrigin(String(cfg.port))
     const toShell = localOrigin(shell.port)
-    const remote = (path: string): Route => ({ target: t, path, html: false, js: true, overlay, rewrite: (s) => s.replace(toRemote, origin + MFE_PATH) })
+    const remote = (path: string): Route => ({
+      target: t,
+      path,
+      html: false,
+      js: true,
+      overlay,
+      rewrite: (s) => guestHmr(s.replace(toRemote, origin + MFE_PATH)).s,
+    })
     return {
       remote,
       shell: (path) => ({
@@ -253,6 +298,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
         js: false,
         overlay,
         rewrite: (s) => s.replace(toDaemon, origin + MFE_PATH).replace(toShell, origin),
+        head: REACT_HOOK,
         fallback: req.method === 'GET' ? () => remote(path) : undefined,
       }),
     }
@@ -296,7 +342,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
       const type = String(u.headers['content-type'] ?? '')
       const html = r.html && type.includes('text/html')
       const js = r.js && /javascript/.test(type) && !/\.hot-update\.js(\?|$)/.test(r.path) && status < 300
-      const text = Boolean(r.rewrite) && /text\/|javascript|json/.test(type)
+      const text = Boolean(r.rewrite || r.head) && /text\/|javascript|json/.test(type)
       if (req.method === 'HEAD' || !(html || js || text)) {
         res.writeHead(status, h)
         return void u.pipe(res)
@@ -306,6 +352,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
       u.on('end', () => {
         let s = Buffer.concat(chunks).toString('utf8')
         if (r.rewrite) s = r.rewrite(s)
+        if (r.head && type.includes('text/html')) s = s.replace(/<head[^>]*>/i, (m) => m + r.head)
         if (html) {
           const tag = `<script src="${SCRIPT_PATH}" defer></script>`
           const i = s.lastIndexOf('</body>')
@@ -336,10 +383,6 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x')
-    if (!hostOk(req)) {
-      res.writeHead(421, { 'content-type': 'text/plain; charset=utf-8' })
-      return void res.end('pinwright: open this page through localhost.')
-    }
     // Remote visitors (the shared link) need the token: from the link once, then from its cookie.
     const auth = collab.authorized(req, url.searchParams)
     if (auth === 'denied') {
@@ -416,7 +459,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
 
   server.on('upgrade', (req: IncomingMessage, socket: net.Socket, head: Buffer) => {
     const url = new URL(req.url ?? '/', 'http://x')
-    if (!hostOk(req) || collab.authorized(req, url.searchParams) !== 'ok') return void socket.destroy()
+    if (collab.authorized(req, url.searchParams) !== 'ok') return void socket.destroy()
     if (url.pathname === '/__pw/ws') return live(req, socket, url)
     // The Origin is rewritten below so the dev server accepts it: only for pages that are local to begin with,
     // or any site open in the browser could read the dev server's HMR stream.

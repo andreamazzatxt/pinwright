@@ -78,7 +78,7 @@ before(async () => {
   remote = await devServer(() => ({
     '/': ['text/html', `<html><head><title>Remote</title></head><body><script src="http://localhost:${remote.port}/static/js/index.js"></script></body></html>`],
     '/remoteEntry.js': ['application/javascript', `var chunk = "http://localhost:${remote.port}/static/js/chunk.js"; var esc = "http:\\/\\/127.0.0.1:${remote.port}\\/x";`],
-    '/static/js/index.js': ['application/javascript', 'console.log("remote")'],
+    '/static/js/index.js': ['application/javascript', `(0,hmr.init)('tok', {\n    "path": "/rsbuild-hmr",\n    "port": ${remote.port},\n    "host": "",\n    "overlay": true\n}, "localhost", ${remote.port}, "/", true);`],
     '/only-remote.js': ['application/javascript', 'window.onlyRemote = 1'],
   }))
   shell = await devServer(() => ({
@@ -103,8 +103,8 @@ after(async () => {
   shell?.srv.close()
 })
 
-test('refuses a page that reaches localhost under another name (DNS rebinding)', { skip }, async () => {
-  assert.equal((await request(D, '/', { headers: { host: `evil.example:${D}` } })).status, 421)
+test('a page that reaches localhost under another name (DNS rebinding) is a stranger: it needs the token', { skip }, async () => {
+  assert.equal((await request(D, '/', { headers: { host: `evil.example:${D}` } })).status, 403)
   assert.equal((await request(D, '/')).status, 200)
 })
 
@@ -151,6 +151,8 @@ test('a guest gets the shell, with every local address pointed at the tunnel', {
   assert.ok(page.body.includes(`https://${TUNNEL}/about`))
   assert.ok(!page.body.includes('localhost'))
   assert.ok(!page.body.includes('/__pw/overlay.js'), 'the overlay comes with the remote, not the shell')
+  // React's DevTools hook comes first, so a remote's React Refresh can redraw (react-dom joins it as it starts).
+  assert.match(page.body, /<head><script data-pinwright-react-hook>if\(!window\.__REACT_DEVTOOLS_GLOBAL_HOOK__\)/)
   const cfg = await request(D, '/config.json', { headers: guest(tokens.review) })
   assert.equal(JSON.parse(cfg.body).remote, `https://${TUNNEL}/__pw/mfe/remoteEntry.js`)
 })
@@ -163,6 +165,16 @@ test('a guest gets the remote under /__pw/mfe, rewritten, with the overlay from 
   // What the shell's dev server doesn't have may be the remote's (root-relative assets).
   const only = await request(D, '/only-remote.js', { headers: guest(tokens.review) })
   assert.match(only.body, /onlyRemote/)
+})
+
+test('a guest\'s Rsbuild HMR client is pointed at the link: path under /__pw/mfe, the page\'s host and port', { skip }, async () => {
+  const r = await request(D, '/__pw/mfe/static/js/index.js', { headers: guest(tokens.review) })
+  assert.match(r.body, /"path": "\/__pw\/mfe\/rsbuild-hmr"/)
+  assert.match(r.body, /"port": 0,/)
+  assert.match(r.body, /"host": ""/)
+  // The host's copy stays as the dev server wrote it.
+  const local = await request(D, '/static/js/index.js')
+  assert.match(local.body, new RegExp(`"path": "/rsbuild-hmr",\\s*"port": ${remote.port}`))
 })
 
 test('review-link notes wait and run under the guest rules; YOLO-link notes run as the host\'s', { skip }, async () => {

@@ -28,6 +28,9 @@ Options:
   --mfe              microfrontend: the overlay rides in this remote's JavaScript, inside your shell
   --scope <css>      notes only inside matching elements, e.g. '[data-mfe="checkout"]'
   --shell <url>      with --mfe: the shell page to open, and the one Go live shares
+  --public-url <url> Go live on a fixed tunnel you run to this port: none is opened
+  --tunnel <name>    Go live through your named Cloudflare tunnel instead of a quick one
+  --hostname <host>  with --tunnel: the hostname routed to it, e.g. review.example.com
   --root <dir>       project root (default: cwd)
   --rebuild <cmd>    command to run after edits (sites without HMR)
   --agents <n>       max parallel agents (default 3)
@@ -50,6 +53,9 @@ const { values: v, positionals } = parseArgs({
     mfe: { type: 'boolean' },
     scope: { type: 'string' },
     shell: { type: 'string' },
+    'public-url': { type: 'string' },
+    tunnel: { type: 'string' },
+    hostname: { type: 'string' },
     target: { type: 'string' },
     port: { type: 'string' },
     root: { type: 'string' },
@@ -163,6 +169,9 @@ async function start(): Promise<void> {
     mfe,
     scope,
     shell: shell || undefined,
+    publicUrl: v['public-url'],
+    tunnel: v.tunnel,
+    hostname: v.hostname,
     rebuild: v.rebuild,
     maxAgents: num(v.agents),
     models: v.model ? { worker: v.model } : undefined,

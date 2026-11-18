@@ -15,6 +15,8 @@ const REMOTE_SITE = 5604
 const SHELL_SITE = 5605
 const SCOPE = '[data-mfe="remote"]'
 let pw, shell, browser
+/** The guest of the live session, kept for the HMR test after it. */
+let guest
 
 before(async () => {
   rmSync(join(REMOTE, '.pinwright'), { recursive: true, force: true })
@@ -82,7 +84,7 @@ test('Go live shares the shell with the remote inside, and nothing a guest loads
   assert.match(links.review, /^https:\/\/test-tunnel\.trycloudflare\.com\/\?pw=/)
   const token = new URL(links.review).searchParams.get('pw')
 
-  const guest = await newPage(browser, { headers: { 'x-forwarded-for': '203.0.113.7', 'x-forwarded-proto': 'http' } })
+  guest = await newPage(browser, { headers: { 'x-forwarded-for': '203.0.113.7', 'x-forwarded-proto': 'http' } })
   const elsewhere = []
   guest.on('request', (r) => {
     const u = new URL(r.url())
@@ -96,6 +98,51 @@ test('Go live shares the shell with the remote inside, and nothing a guest loads
   assert.equal(await noteOpensOn(guest, '#shell-title'), false)
   assert.equal(await noteOpensOn(guest, '#remote-button'), true)
   assert.deepEqual(elsewhere, [])
+})
+
+test('a guest sees the remote change by itself, through the link\'s HMR socket', async () => {
+  // Reloaded once so the HMR socket opens while we watch.
+  const sockets = []
+  guest.on('websocket', (ws) => sockets.push(ws.url()))
+  await guest.reload()
+  await guest.locator('#widget').waitFor({ timeout: 60_000 })
+  // An exposed module isn't hot-swapped: the dev server reloads the page, for the host and the guest alike.
+  const restore = patchFile(join(REMOTE, 'src', 'widget.js'), 'Remote widget', 'Remote widget LIVE')
+  try {
+    await guest.waitForFunction(() => document.querySelector('#widget')?.textContent === 'Remote widget LIVE', null, { timeout: 30_000 })
+    await overlayReady(guest)
+    // No React in this shell: the hook pinwright adds for one doesn't make the update look stale.
+    await sleep(2500)
+    assert.equal(await guest.evaluate(() => document.querySelector('pinwright-root').shadowRoot.querySelector('.stale').hidden), true)
+  } finally {
+    restore()
+  }
+  assert.ok(sockets.some((u) => u.startsWith(`ws://localhost:${PORT}/__pw/mfe/rsbuild-hmr`)), sockets.join(', '))
+})
+
+test('a note the host makes shows up on the guest\'s page live, and turns done live, without reloading anyone\'s page', async () => {
+  const host = await newPage(browser)
+  await host.goto(`http://localhost:${SHELL_SITE}/`)
+  await host.locator('#remote-button').waitFor({ timeout: 60_000 })
+  await overlayReady(host)
+  await guest.locator('#remote-button').waitFor({ timeout: 60_000 })
+  // The host's note, the way the overlay sends it.
+  const note = await host.evaluate(
+    (port) =>
+      fetch(`http://localhost:${port}/__pw/notes`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ page: location.pathname, text: 'host note', selector: '#remote-button', fx: 0.5, fy: 0.5 }) }).then((r) => r.json()),
+    PORT,
+  )
+  const pin = (p, id) => p.evaluate((id) => document.querySelector('pinwright-root').shadowRoot.querySelector(`.pin[data-id="${id}"]`)?.className ?? null, id)
+  await guest.waitForFunction((id) => !!document.querySelector('pinwright-root').shadowRoot.querySelector(`.pin[data-id="${id}"]`), note.id, { timeout: 5000 })
+  // Done (by hand here: no agent runs in tests): the pin turns green, "Show done" off, and nobody's page reloads:
+  // the changes come by HMR.
+  await guest.evaluate(() => (window.__beforeDone = true))
+  await host.evaluate(([port, id]) => fetch(`http://localhost:${port}/__pw/notes/${id}/done`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }), [PORT, note.id])
+  await guest.waitForFunction((id) => /s-done/.test(document.querySelector('pinwright-root').shadowRoot.querySelector(`.pin[data-id="${id}"]`)?.className ?? ''), note.id, { timeout: 5000 })
+  assert.match(await pin(host, note.id), /s-done/)
+  await sleep(3000)
+  assert.equal(await guest.evaluate(() => window.__beforeDone), true, 'the guest is not reloaded')
+  assert.equal(await host.evaluate(() => performance.getEntriesByType('navigation')[0].type), 'navigate', 'the host is not reloaded')
 })
 
 test('Ctrl+C stops pinwright and the remote\'s dev server', async () => {

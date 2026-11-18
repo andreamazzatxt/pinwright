@@ -26,6 +26,7 @@
       notes: (n) => `Note (${n})`,
       waiting: (n) => ` · ${n} da rispondere`,
       mode: 'Cosa non va? Cliccalo.',
+      tap: 'Tocca dove va la nota',
       notesN: (n) => `Note ${n}`,
       write: 'Scrivi la nota…',
       talk: 'Detta: tieni premuto ⌥ o clicca',
@@ -36,6 +37,8 @@
       cancel: 'Annulla',
       save: 'Salva',
       close: 'Chiudi',
+      stale: 'Ci sono aggiornamenti: clicca per caricarli',
+      staleDevtools: 'Ci sono aggiornamenti: clicca per caricarli.\n\nPer averli senza ricaricare, installa o attiva l’estensione React DevTools: senza, questa pagina non può applicare l’HMR del microfrontend.',
       del: 'Elimina',
       sure: 'Sicuro? Elimina',
       reply: 'Rispondi',
@@ -60,6 +63,12 @@
       live: 'Live',
       minimize: 'Riduci',
       rename: 'clicca per cambiare nome',
+      person: 'clicca per raggiungere o seguire',
+      goTo: 'Raggiungi',
+      follow: 'Segui',
+      unfollow: 'Smetti di seguire',
+      following: (n) => `Stai seguendo ${n}`,
+      stopHint: 'Esc per smettere',
       expand: 'Espandi',
       yolo: 'YOLO mode',
       linkAutoHint: 'Le note partono subito, senza limiti: chi ha questo link può far girare codice sul tuo computer.',
@@ -77,6 +86,10 @@
       other: 'Su altre pagine',
       showDone: (n) => `Mostra fatte (${n})`,
       hideDone: 'Nascondi fatte',
+      typing: (n) => `${n} sta scrivendo una nota`,
+      hiddenInfo: 'Pin nascosto: lo ritrovi nella lista',
+      hiddenTag: 'nascosta',
+      unhide: 'Clicca per rimettere il pin',
       offline: 'pinwright non raggiungibile',
       click: 'clicca per aprire',
       cost: (n) => `${n.tokens ? `${tokensOf(n.tokens)} token · ` : ""}$${n.costUsd.toFixed(n.costUsd < 0.01 ? 3 : 2)}`,
@@ -86,6 +99,7 @@
       notes: (n) => `Notes (${n})`,
       waiting: (n) => ` · ${n} to answer`,
       mode: 'What’s off? Click it.',
+      tap: 'Tap where the note goes',
       notesN: (n) => `Notes ${n}`,
       write: 'Write the note…',
       talk: 'Dictate: hold ⌥ or click',
@@ -96,6 +110,8 @@
       cancel: 'Cancel',
       save: 'Save',
       close: 'Close',
+      stale: 'New changes: click to load them',
+      staleDevtools: 'New changes: click to load them.\n\nTo get them without a reload, install or enable the React DevTools extension: without it this page can’t apply the microfrontend’s hot updates.',
       del: 'Delete',
       sure: 'Sure? Delete',
       reply: 'Reply',
@@ -120,6 +136,12 @@
       live: 'Live',
       minimize: 'Minimize',
       rename: 'click to change your name',
+      person: 'click to go to them or follow',
+      goTo: 'Go to',
+      follow: 'Follow',
+      unfollow: 'Stop following',
+      following: (n) => `Following ${n}`,
+      stopHint: 'Esc to stop',
       expand: 'Expand',
       yolo: 'YOLO mode',
       linkAutoHint: 'Notes run right away, no limits: whoever has this link can run code on your machine.',
@@ -137,6 +159,10 @@
       other: 'On other pages',
       showDone: (n) => `Show done (${n})`,
       hideDone: 'Hide done',
+      typing: (n) => `${n} is writing a note`,
+      hiddenInfo: 'Pin hidden: it’s in the list',
+      hiddenTag: 'hidden',
+      unhide: 'Click to put the pin back',
       offline: 'pinwright not reachable',
       click: 'click to open',
       cost: (n) => `${n.tokens ? `${tokensOf(n.tokens)} tokens · ` : ""}$${n.costUsd.toFixed(n.costUsd < 0.01 ? 3 : 2)}`,
@@ -152,9 +178,31 @@
   input,textarea{cursor:text}
   .dock{position:fixed;right:16px;bottom:16px;display:flex;gap:8px;align-items:flex-end}
   .dock .people{align-self:flex-end;padding-bottom:7px}
+  button.ib.stale{width:44px;height:44px;margin-bottom:2px;background:#fff;box-shadow:0 10px 30px rgb(0 0 0/.3);animation:pop .18s ease-out}
+  button.ib.stale svg{width:20px;height:20px}
+  button.ib.stale::before{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:#ff3b6b;border:2px solid #fff}
+  button.ib.stale[hidden]{display:none}
+  button.ib.stale[data-tip]:hover::after{width:260px;padding:8px 10px;white-space:pre-line;font:500 12px/1.4 system-ui,sans-serif}
+  .hiddenchip{position:absolute;right:0;bottom:calc(100% + 8px);display:flex;align-items:center;gap:8px;padding:6px 12px 6px 8px;border:0;border-radius:999px;background:#fff;color:#121318;font:600 12px system-ui,sans-serif;white-space:nowrap;box-shadow:0 6px 18px rgb(0 0 0/.2);transition:opacity .25s ease,translate .25s ease}
+  .hiddenchip[data-away]{opacity:0;translate:0 6px;pointer-events:none}
+  .list li.hid{opacity:.55}
+  .list li.hid:hover{opacity:1}
+  .hiddenchip[hidden]{display:none}
+  .hiddenchip i{width:14px;height:14px;border-radius:50% 50% 50% 0;background:#16a34a;transform:rotate(-45deg);opacity:.55}
+  .hiddenchip:hover{background:#eef1f5}
   .people{display:flex}
   .people span{display:grid;place-items:center;width:30px;height:30px;margin-left:-6px;border:2px solid #fff;border-radius:50%;background:var(--pc);color:#fff;font:800 11px system-ui,sans-serif;box-shadow:0 4px 12px rgb(0 0 0/.2)}
   .people span.me{cursor:pointer;outline:2px solid var(--pc);outline-offset:1px}
+  .people span:not(.me){cursor:pointer}
+  .people span.followed{outline:2px dashed var(--pc);outline-offset:2px}
+  .card.personcard{width:auto;min-width:200px;padding:10px;border-radius:12px}
+  .personcard p{display:flex;align-items:center;gap:8px;margin:0 0 8px;color:#121318;font:600 13px system-ui,sans-serif}
+  .personcard p i{width:10px;height:10px;border-radius:50%;background:var(--pc)}
+  .personcard .row{margin:0;justify-content:stretch}
+  .personcard .row button{flex:1}
+  .followframe{position:fixed;inset:0;border:3px solid var(--pc);pointer-events:none}
+  .followframe button{position:absolute;top:8px;left:50%;translate:-50% 0;padding:5px 12px;border:0;border-radius:999px;background:var(--pc);color:#fff;font:600 12px system-ui,sans-serif;pointer-events:auto;box-shadow:0 6px 18px rgb(0 0 0/.25)}
+  .followframe button small{margin-left:6px;opacity:.8;font-weight:500}
   /* The hub: a pill when closed, the dark notes card when open; one element, morphing between the two. */
   .hub{position:relative;display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-end;border-radius:22px;background:#ff3b6b;color:#fff;box-shadow:0 10px 30px rgb(0 0 0/.3);transition:width .34s cubic-bezier(.2,.8,.2,1),height .34s cubic-bezier(.2,.8,.2,1),border-radius .34s ease,background-color .34s ease}
   .hub[data-on],.hub[data-open]{background:#121318}
@@ -173,6 +221,9 @@
   .face .lv i{width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 3px rgb(74 222 128/.25)}
   .face .lv button{display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:50%;background:rgb(255 255 255/.18);color:#fff}
   .face .lv svg{width:12px;height:12px}
+  .face .golive{display:flex;align-items:center;gap:5px;margin-left:4px;padding:4px 10px;border:0;border-radius:999px;background:rgb(255 255 255/.18);color:#fff;font:700 12px system-ui,sans-serif}
+  .face .golive:hover{background:rgb(255 255 255/.3)}
+  .face .golive svg{width:12px;height:12px}
   @keyframes fade{from{opacity:0}}
   kbd{margin-left:8px;padding:1px 6px;border:1px solid rgb(255 255 255/.25);border-radius:5px;font:600 10px ui-monospace,monospace;color:rgb(255 255 255/.6);vertical-align:1px}
   .list{width:340px;max-height:60vh;overflow:auto;padding:6px 10px 10px;color:#e8e9ee;animation:fade .2s ease .12s both}
@@ -251,6 +302,11 @@
   .s-failed{--c:#dc2626}
   .s-handoff{--c:#f97316}
   .pin .dots{display:flex;gap:2px}
+  .pin.typing{pointer-events:none;opacity:.9}
+  .pin[data-pressing]{scale:1.18;transition:scale .55s ease-out}
+  .pin.leaving{animation:pin-out .26s ease-in forwards}
+  @keyframes pin-out{to{scale:0;opacity:0}}
+  @media (prefers-reduced-motion:reduce){.pin[data-pressing]{scale:1;transition:none}.pin.leaving{animation:none;opacity:0}}
   .pin .dots b{width:4px;height:4px;border-radius:50%;background:#fff;animation:dot 1s ease-in-out infinite}
   .pin .dots b:nth-child(2){animation-delay:.15s}
   .pin .dots b:nth-child(3){animation-delay:.3s}
@@ -310,6 +366,18 @@
   .toast small{display:block;margin-top:4px;color:#8a8f9c;font-size:12px}
   .toast button{position:absolute;top:6px;right:8px;border:0;background:none;color:#8a8f9c;font-size:16px;line-height:1}
   @keyframes toast-in{from{opacity:0;translate:0 8px}}
+  /* A phone: cards, list and toasts take the width there is. */
+  @media (max-width:520px){
+    .dock{right:8px;bottom:8px}
+    .list{width:calc(100vw - 16px);max-height:65vh}
+    .card{left:8px!important;right:8px;width:auto}
+    .toasts{right:8px;bottom:64px;width:calc(100vw - 16px)}
+  }
+  /* No hover: tips would stick after a tap, and iOS zooms into fields under 16px. */
+  @media (hover:none){
+    button.ib[data-tip]:hover::after,.list .live[data-tip]:hover::after,.pin:hover::after{content:none}
+    textarea{font-size:16px}
+  }
 `
 
   // --- host: one element, in the top layer so it stays above (and usable over) a modal dialog.
@@ -395,7 +463,8 @@
     return b
   }
 
-  const page = location.pathname
+  /** The path notes, pins and cursors belong to. A single-page app changes it without a reload (see onRoute). */
+  let page = location.pathname
   const VISIBLE = ['queued', 'planning', 'working', 'done', 'asking', 'handoff', 'failed']
   let notes = []
   const activity = {}
@@ -407,7 +476,19 @@
   try {
     showDone = localStorage.getItem('pw-show-done') === '1'
   } catch {}
-  const shown = (n) => showDone || n.status !== 'done'
+  /** Notes that finished while this page was open: their green pin stays, for everyone, "Show done" or not. */
+  const justDone = new Set()
+  const shown = (n) => showDone || n.status !== 'done' || justDone.has(n.id)
+  /** Pins put away with a long press, per browser. Their notes stay in the list; the chip above the button brings them back. */
+  let hiddenPins = new Set()
+  try {
+    hiddenPins = new Set(JSON.parse(localStorage.getItem('pw-hidden-pins') || '[]'))
+  } catch {}
+  const saveHidden = () => {
+    try {
+      localStorage.setItem('pw-hidden-pins', JSON.stringify([...hiddenPins]))
+    } catch {}
+  }
   let online = true
   // Live session: me, the others (max 8 people), their cursors, the share link (host only).
   let pid = null
@@ -431,6 +512,10 @@
   // Holding ⌥ is a temporary note mode.
   let held = false
   const active = () => on || held
+  // A phone or a tablet: no hover and no ⌥. The button arms one note at a time, and a tap puts it there.
+  const coarse = matchMedia('(hover: none) and (pointer: coarse)')
+  const touch = () => coarse.matches
+  const modeHint = () => (touch() ? [T.tap] : [T.mode, h('kbd', { text: 'esc' })])
 
   const hl = h('div.hl')
   // Where notes are allowed: outlined, the rest of the page dimmed, while placing a note.
@@ -448,7 +533,28 @@
   const hub = h('div.hub.ui', {}, list, face)
   let isOpen = false
   const people = h('div.people.ui')
-  const dock = h('div.dock', {}, people, hub)
+  /** New code arrived but the page didn't redraw with it: one click reloads (see the hot updates below). */
+  const stale = ib('retry', T.stale, () => ((stale.hidden = true), location.reload()), '.stale.ui')
+  stale.hidden = true
+  // After a pin is put away: where it went, for a few seconds. A click opens the list, where hidden pins are.
+  const hiddenChip = h(
+    'button.hiddenchip.ui',
+    { onclick: (e) => (e.stopPropagation(), (hiddenChip.hidden = true), setOpen(true)) },
+    h('i'),
+    h('span', { text: T.hiddenInfo }),
+  )
+  hiddenChip.hidden = true
+  let chipTimer = null
+  function showChip() {
+    clearTimeout(chipTimer)
+    hiddenChip.hidden = false
+    delete hiddenChip.dataset.away
+    chipTimer = setTimeout(() => {
+      hiddenChip.dataset.away = ''
+      chipTimer = setTimeout(() => (hiddenChip.hidden = true), 300)
+    }, 5000)
+  }
+  const dock = h('div.dock', {}, people, stale, hub, hiddenChip)
   const pins = h('div')
   const cursorLayer = h('div')
   const toasts = h('div.toasts')
@@ -460,8 +566,14 @@
   function modeCursor() {
     const c = (me && me.color) || '#ff3b6b'
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'><path d='M2 24V13A11 11 0 1 1 13 24Z' fill='${c}' stroke='white' stroke-width='2'/></svg>`
+    // In a live session my pointer is an arrow in my colour, as the others see it. Not !important: links,
+    // fields and the page's own cursors keep theirs.
+    const arrow = `<svg xmlns='http://www.w3.org/2000/svg' width='18' height='22' viewBox='0 0 18 22'><path d='M1 1v17l4.5-4.2 3.2 7.2 3-1.3-3.2-7H15z' fill='${c}' stroke='white' stroke-width='1.5' stroke-linejoin='round'/></svg>`
     // Our own cards keep the normal cursor: the pin is only for the page.
-    modeStyle.textContent = `html[data-pw-mode],html[data-pw-mode] *{cursor:url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 24,crosshair!important}html[data-pw-mode] pinwright-root{cursor:default!important}`
+    const css = `html[data-pw-live]{cursor:url("data:image/svg+xml,${encodeURIComponent(arrow)}") 1 1,auto}html[data-pw-mode],html[data-pw-mode] *{cursor:url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 24,crosshair!important}html[data-pw-mode] pinwright-root{cursor:default!important}`
+      // iOS sends a tap's click only to what looks clickable: during note mode, everything does.
+      + (touch() ? 'html[data-pw-mode] *{cursor:pointer!important}' : '')
+    if (modeStyle.textContent !== css) modeStyle.textContent = css
   }
   modeCursor()
 
@@ -558,12 +670,22 @@
   function render() {
     drawScope()
     const all = mine()
-    const ns = all.filter(shown)
+    // On the page: what is going on, and at most the five latest done notes, minus the pins put away.
+    const latestDone = new Set(
+      all
+        .filter((n) => n.status === 'done' && shown(n) && !hiddenPins.has(n.id))
+        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+        .slice(0, 5)
+        .map((n) => n.id),
+    )
+    const ns = all.filter((n) => shown(n) && !hiddenPins.has(n.id) && (n.status !== 'done' || latestDone.has(n.id)))
     const open = all.filter((n) => n.status !== 'done').length
     const waiting = all.filter((n) => n.status === 'asking').length
     const toApprove = access === 'host' ? visible().filter((n) => stOf(n) === 'review').length : 0
     renderFace(open, waiting, toApprove)
     document.documentElement.toggleAttribute('data-pw-mode', active())
+    document.documentElement.toggleAttribute('data-pw-live', Boolean(me && peers.length > 1))
+    modeCursor()
     renderPeople()
     hub.toggleAttribute('data-on', on)
     hub.toggleAttribute('data-open', isOpen)
@@ -579,7 +701,23 @@
           const i = all.indexOf(n)
           const act = activity[n.id]
           const tip = `${T.st[stOf(n)]}${act ? ` · ${act}` : ''}\n\n${short(n.text, 200)}\n\n(${T.click})`
-          return h(`div.pin.ui.s-${stOf(n)}`, { 'data-id': n.id, 'data-text': tip, onclick: (e) => (e.stopPropagation(), openPanel(n.id)) }, busy(n) ? h('i.dots', {}, h('b'), h('b'), h('b')) : h('i', { text: String(i + 1) }))
+          const pin = h(
+            `div.pin.ui.s-${stOf(n)}`,
+            {
+              'data-id': n.id,
+              'data-text': tip,
+              onclick: (e) => {
+                e.stopPropagation()
+                // The click that ends a long press isn't one.
+                if (pin.dataset.held) return void delete pin.dataset.held
+                openPanel(n.id)
+              },
+            },
+            busy(n) ? h('i.dots', {}, h('b'), h('b'), h('b')) : h('i', { text: String(i + 1) }),
+          )
+          holdToHide(pin, n.id)
+          return pin
+
         }),
       )
     }
@@ -587,14 +725,43 @@
     renderList()
   }
 
+  /** Pressing a pin for a moment puts it away. */
+  function holdToHide(pin, id) {
+    let timer = null
+    const cancel = () => clearTimeout(timer)
+    pin.addEventListener('pointerdown', (e) => {
+      if (e.button) return
+      clearTimeout(timer)
+        // It swells while held, then shrinks away into its tip.
+      pin.dataset.pressing = '1'
+      timer = setTimeout(() => {
+        pin.dataset.held = '1'
+        pin.classList.add('leaving')
+        setTimeout(() => {
+          hiddenPins.add(id)
+          saveHidden()
+          render()
+          showChip()
+        }, 260)
+      }, 550)
+    })
+    for (const t of ['pointerup', 'pointerleave', 'pointercancel'])
+      pin.addEventListener(t, () => {
+        cancel()
+        delete pin.dataset.pressing
+      })
+    // A long press on a phone would open the context menu.
+    pin.addEventListener('contextmenu', (e) => e.preventDefault())
+  }
+
   /** The closed hub: the count, what waits for me, and the live state with a copy button. */
   function renderFace(open, waiting, toApprove) {
     const live = shareLinks && me && !me.guest
-    const sig = JSON.stringify([full, online, on, open, waiting, toApprove, live && yolo, live && shareLinks.auto])
+    const host = Boolean(me && !me.guest)
+    const sig = JSON.stringify([full, online, on, touch(), open, waiting, toApprove, live && yolo, live && shareLinks.auto, host, sharing])
     if (face.dataset.sig === sig) return
     face.dataset.sig = sig
     if (full || !online) return void face.replaceChildren(full ? T.full : T.offline)
-    if (on) return void face.replaceChildren(T.mode, h('kbd', { text: 'esc' }))
     const url = () => (yolo ? shareLinks.auto : shareLinks.review)
     const copy = live
       ? h(
@@ -614,13 +781,21 @@
           svg('copy'),
         )
       : null
+    // Live: the dot and the link to copy. Not yet: Go live right here, without opening the list.
+    const liveBit = live
+      ? h('span.lv', {}, h('i'), yolo ? 'YOLO' : T.live, copy)
+      : host
+        ? h('button.golive', { title: T.shareHint, disabled: sharing, onclick: (e) => (e.stopPropagation(), startShare()) }, svg('link'), sharing ? T.sharing : T.share)
+        : null
+    if (on) return void face.replaceChildren(...modeHint(), ...(liveBit ? [liveBit] : []))
     // replaceChildren would print a null as the text "null".
     face.replaceChildren(
       ...[
         T.notesN(open),
         waiting ? h('span.n.q', { text: String(waiting), title: T.waiting(waiting).replace(' · ', '') }) : null,
         toApprove ? h('span.n.a', { text: String(toApprove), title: T.toApprove(toApprove).replace(' · ', '') }) : null,
-        live ? h('span.lv', {}, h('i'), yolo ? 'YOLO' : T.live, copy) : null,
+        // Not live yet: Go live waits in note mode and in the list, so a click on the button never starts it by mistake.
+        live ? liveBit : null,
       ].filter(Boolean),
     )
   }
@@ -657,13 +832,32 @@
   function renderList() {
     if (!isOpen) return
     const all = mine()
-    const ns = all.filter(shown)
-    const others = visible().filter((n) => n.page !== page && shown(n))
+    // Of the done notes, only the three latest: the list is for what is going on.
+    const latest = new Set(
+      visible()
+        .filter((n) => n.status === 'done' && shown(n))
+        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+        .slice(0, 3)
+        .map((n) => n.id),
+    )
+    // Pins put away live here, whatever their state: this is where they are found again.
+    const listed = (n) => hiddenPins.has(n.id) || (shown(n) && (n.status !== 'done' || latest.has(n.id)))
+    const ns = all.filter(listed)
+    const others = visible().filter((n) => n.page !== page && listed(n))
     const done = visible().filter((n) => n.status === 'done').length
     const item = (n, i, here) =>
       h(
-        `li.s-${stOf(n)}`,
-        { onclick: () => (here ? focusPin(n.id) : (location.href = n.page)) },
+        `li.s-${stOf(n)}${hiddenPins.has(n.id) ? '.hid' : ''}`,
+        {
+          title: hiddenPins.has(n.id) ? T.unhide : undefined,
+          onclick: () => {
+            // Clicked in the list: its pin comes back.
+            if (hiddenPins.delete(n.id)) saveHidden()
+            if (!here) return void (location.href = n.page)
+            render()
+            focusPin(n.id)
+          },
+        },
         h('b', { text: here ? String(i + 1) : '•' }),
         h(
           'span',
@@ -671,12 +865,12 @@
           here ? short(n.text) : `${n.page}  ${short(n.text, 80)}`,
           n.status === 'done' && n.costUsd ? h('em.cost', { text: T.cost(n) }) : null,
         ),
-        h('small', { text: T.st[stOf(n)] }),
+        h('small', { text: hiddenPins.has(n.id) ? `${T.st[stOf(n)]} · ${T.hiddenTag}` : T.st[stOf(n)] }),
       )
     const bar = h(
       'div.bar',
       {},
-      h('span', {}, on ? [T.mode, h('kbd', { text: 'esc' })] : T.notesN(all.filter((n) => n.status !== 'done').length)),
+      h('span', {}, on ? modeHint() : T.notesN(all.filter((n) => n.status !== 'done').length)),
       h('button', { text: '×', title: T.close, 'aria-label': T.close, onclick: (e) => (e.stopPropagation(), setOn(false), setOpen(false)) }),
     )
     const parts = [
@@ -717,7 +911,7 @@
       .toUpperCase()
   }
   function renderPeople() {
-    const sig = JSON.stringify(peers.map((p) => [p.id, p.name]))
+    const sig = JSON.stringify([peers.map((p) => [p.id, p.name]), following])
     if (people.dataset.sig === sig) return
     people.dataset.sig = sig
     // Alone, nothing to show.
@@ -725,10 +919,10 @@
     people.replaceChildren(
       ...ps.map((p) => {
         const mine = p.id === pid
-        const chip = h(mine ? 'span.me' : 'span', {
-          title: mine ? `${p.name} (${T.you}) · ${T.rename}` : p.name,
+        const chip = h(mine ? 'span.me' : p.id === following ? 'span.followed' : 'span', {
+          title: mine ? `${p.name} (${T.you}) · ${T.rename}` : `${p.name} · ${T.person}`,
           text: initials(p.name),
-          onclick: mine ? (e) => (e.stopPropagation(), nameCard(chip)) : undefined,
+          onclick: (e) => (e.stopPropagation(), mine ? nameCard(chip) : personCard(chip, p)),
         })
         chip.style.setProperty('--pc', p.color)
         return chip
@@ -760,8 +954,102 @@
   )
 
   /** A small card above my chip to choose my name; it sticks in this browser. */
+  // --- follow: go where someone is, once, or keep going wherever they go (page and scroll) until I move myself.
+  let following = null
+  try {
+    following = sessionStorage.getItem('pw-follow')
+  } catch {}
+  const followFrame = h('div.followframe', { hidden: true })
+  root.append(followFrame)
+
+  /** Someone else's card: go to them, follow them, or stop following. */
+  function personCard(chip, p) {
+    root.querySelector('.namecard,.personcard')?.remove()
+    const close = () => card.remove()
+    const isOn = following === p.id
+    const card = h(
+      'div.card.personcard.ui',
+      { onclick: (e) => e.stopPropagation() },
+      h('p', {}, h('i'), p.name),
+      h(
+        'div.row',
+        {},
+        h('button', { text: T.goTo, onclick: () => (close(), goTo(p.id)) }),
+        h('button.ok', { text: isOn ? T.unfollow : T.follow, onclick: () => (close(), isOn ? unfollow() : follow(p.id)) }),
+      ),
+    )
+    card.style.setProperty('--pc', p.color)
+    root.append(card)
+    const r = chip.getBoundingClientRect()
+    card.style.left = `${Math.max(8, Math.min(r.left, innerWidth - card.offsetWidth - 8))}px`
+    card.style.top = `${r.top - card.offsetHeight - 8}px`
+  }
+
+  /** Brings my view to theirs: their page (a navigation), then their viewport, centred. */
+  function catchUp(id, smooth) {
+    const d = cursors.get(id)?.data
+    const where = d?.page ?? peers.find((x) => x.id === id)?.page
+    if (where && where !== page) {
+      try {
+        if (d && typeof d.sy === 'number') sessionStorage.setItem('pw-goto', JSON.stringify({ path: where, d }))
+      } catch {}
+      return void (location.href = where)
+    }
+    if (!d || typeof d.sy !== 'number') return
+    scrollTo({ top: Math.max(0, d.sy + (d.vh || innerHeight) / 2 - innerHeight / 2), behavior: smooth ? 'smooth' : 'auto' })
+  }
+
+  function goTo(id) {
+    if (following && following !== id) unfollow()
+    catchUp(id, true)
+  }
+  function follow(id) {
+    following = id
+    try {
+      sessionStorage.setItem('pw-follow', id)
+    } catch {}
+    renderFollow()
+    catchUp(id, true)
+  }
+  function unfollow() {
+    if (!following) return
+    following = null
+    try {
+      sessionStorage.removeItem('pw-follow')
+    } catch {}
+    renderFollow()
+  }
+  /** The frame in their colour, and the pill that says whom I follow (a click stops it). */
+  function renderFollow() {
+    const p = following && peers.find((x) => x.id === following)
+    followFrame.hidden = !p
+    if (p) {
+      followFrame.style.setProperty('--pc', p.color)
+      followFrame.replaceChildren(h('button.ui', { onclick: (e) => (e.stopPropagation(), unfollow()) }, T.following(p.name), h('small', { text: T.stopHint })))
+    }
+    people.dataset.sig = ''
+    renderPeople()
+  }
+  // Moving myself ends it: the wheel, a touch, the scroll keys.
+  const takeOver = () => following && unfollow()
+  addEventListener('wheel', takeOver, { passive: true })
+  addEventListener('touchmove', takeOver, { passive: true })
+  addEventListener('keydown', (e) => {
+    if (['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' '].includes(e.key) && !typing(e)) takeOver()
+  })
+  // Where they were when I arrived on their page.
+  try {
+    const go = JSON.parse(sessionStorage.getItem('pw-goto') || 'null')
+    sessionStorage.removeItem('pw-goto')
+    if (go && go.path === page) {
+      const there = () => scrollTo(0, Math.max(0, go.d.sy + (go.d.vh || innerHeight) / 2 - innerHeight / 2))
+      document.readyState === 'complete' ? there() : addEventListener('load', there)
+      setTimeout(there, 300)
+    }
+  } catch {}
+
   function nameCard(chip) {
-    root.querySelector('.namecard')?.remove()
+    root.querySelector('.namecard,.personcard')?.remove()
     const save = () => {
       const name = input.value.replace(/\s+/g, ' ').trim().slice(0, 30)
       card.remove()
@@ -861,13 +1149,18 @@
 
   // --- cursors: mine goes out (throttled) anchored to the element under it; the others' come in.
   let lastPointer = null
+  /** The note I'm writing, if any: where it goes, so the others see a pin there with dots. */
+  let writing = null
   let sendTimer = null
   let lastSent = 0
   function cursorPayload(hidden) {
-    if (hidden || !lastPointer) return { pid, page, hidden: true }
+    // sy, vh: where my viewport is, for whoever follows me.
+    const view = { sy: scrollY, vh: innerHeight }
+    if (writing) view.w = writing.at
+    if (hidden || !lastPointer) return { pid, page, hidden: true, ...view }
     const { x, y } = lastPointer
     const el = document.elementFromPoint(x, y)
-    const d = { pid, page, x: x / innerWidth, y: y + scrollY, hidden: false }
+    const d = { pid, page, x: x / innerWidth, y: y + scrollY, hidden: false, ...view }
     if (el && el !== host && el !== document.documentElement && el !== document.body) {
       const r = el.getBoundingClientRect()
       if (r.width && r.height) Object.assign(d, { sel: sel(el), fx: (x - r.left) / r.width, fy: (y - r.top) / r.height })
@@ -885,6 +1178,14 @@
     if (sendTimer) return
     sendTimer = setTimeout(go, Math.max(0, 60 - (Date.now() - lastSent)))
   }
+  // While I write, the others' copy must not go stale (my pointer may not move); a card closed any way ends it.
+  setInterval(() => {
+    if (writing && !writing.form.isConnected) writing = null
+    else if (!writing) return
+    sendCursor()
+  }, 3000)
+  // Followers keep up with my scroll too, not only my pointer.
+  addEventListener('scroll', () => sendCursor(), { passive: true })
   addEventListener(
     'pointermove',
     (e) => {
@@ -925,26 +1226,41 @@
     svg.append(path)
     return svg
   }
+  /** Where a point the others sent lands on my screen: on the same element if I have it, else by page position. */
+  function spot(p) {
+    let x = p.x * innerWidth
+    let y = p.y - scrollY
+    if (p.sel) {
+      try {
+        const el = document.querySelector(p.sel)
+        const r = el && el.getBoundingClientRect()
+        if (r && (r.width || r.height)) {
+          x = r.left + r.width * p.fx
+          y = r.top + r.height * p.fy
+        }
+      } catch {}
+    }
+    return { x, y }
+  }
   function placeCursors() {
     for (const [id, c] of cursors) {
       const d = c.data
-      const stale = Date.now() - c.at > 20000
-      if (d.hidden || d.page !== page || stale || !peers.some((p) => p.id === id)) {
+      const here = d.page === page && Date.now() - c.at < 20000 && peers.some((p) => p.id === id)
+      // Someone writing a note: a pin in their colour where it goes, with dots.
+      if (here && d.w) {
+        if (!c.wel) {
+          c.wel = h('div.pin.typing', { title: T.typing(d.name) }, h('i', {}, h('span.dots', {}, h('b'), h('b'), h('b'))))
+          cursorLayer.append(c.wel)
+        }
+        c.wel.style.setProperty('--c', d.color)
+        const { x, y } = spot(d.w)
+        Object.assign(c.wel.style, { display: 'grid', left: `${x}px`, top: `${y}px` })
+      } else if (c.wel) c.wel.style.display = 'none'
+      if (!here || d.hidden) {
         c.el.style.display = 'none'
         continue
       }
-      let x = d.x * innerWidth
-      let y = d.y - scrollY
-      if (d.sel) {
-        try {
-          const el = document.querySelector(d.sel)
-          const r = el && el.getBoundingClientRect()
-          if (r && (r.width || r.height)) {
-            x = r.left + r.width * d.fx
-            y = r.top + r.height * d.fy
-          }
-        } catch {}
-      }
+      const { x, y } = spot(d)
       c.el.style.display = 'block'
       c.el.style.transform = `translate(${x}px, ${y}px)`
     }
@@ -961,6 +1277,7 @@
     c.data = d
     c.at = Date.now()
     placeCursors()
+    if (following === d.pid) catchUp(d.pid, false)
   }
   setInterval(placeCursors, 2000)
 
@@ -1046,6 +1363,8 @@
         cursors.delete(id)
       }
     }
+    if (following && !peers.some((p) => p.id === following)) unfollow()
+    else renderFollow()
     render()
     // Somebody new: tell them where my pointer is.
     sendCursor()
@@ -1057,6 +1376,7 @@
   })
   handle('note', (n) => {
     const prev = notes.find((x) => x.id === n.id)
+    if (prev && prev.status !== 'done' && n.status === 'done') justDone.add(n.id)
     if (prev && prev.status !== n.status && ['done', 'failed', 'handoff'].includes(n.status)) toast(n)
     // The host hears about notes and replies from the review link as they arrive.
     else if (access === 'host' && stOf(n) === 'review' && (!prev || stOf(prev) !== 'review')) toast(n)
@@ -1080,7 +1400,7 @@
   /** Closes every open card: the note being written, the panel, the list. */
   function closeAll() {
     root.querySelector('.form')?.remove()
-    root.querySelector('.namecard')?.remove()
+    root.querySelector('.namecard,.personcard')?.remove()
     closePanel()
     setOpen(false)
   }
@@ -1171,6 +1491,7 @@
       return setOn(!on)
     }
     if (e.key === 'Escape') {
+      if (following && !root.querySelector('.form')) return void unfollow()
       const open = root.querySelector('.form') || panelId || isOpen
       closeAll()
       if (!open && on) setOn(false)
@@ -1204,6 +1525,8 @@
       if (card) return
       const el = e.target
       hl.style.display = 'none'
+      // The router may have just moved on, ahead of our check (input runs before timers when the page is busy).
+      onRoute()
       const r = el.getBoundingClientRect()
       const at = {
         page,
@@ -1218,10 +1541,24 @@
         pageY: e.pageY,
         viewport: `${innerWidth}x${innerHeight}`,
       }
+      // On a touch screen the button gives one note: the next tap is the page's again.
+      if (touch() && on) setOn(false)
       writeNote(at, e.clientX, e.clientY)
     },
     true,
   )
+  // In note mode a press on the page is ours: its menus and drags don't start under the note being placed.
+  for (const type of ['pointerdown', 'mousedown', 'touchstart'])
+    document.addEventListener(
+      type,
+      (e) => {
+        if (!active() || fromUs(e) || !inScope(e.target)) return
+        e.stopPropagation()
+        // No hover on a touch screen: show what the tap is on as it lands.
+        if (type === 'pointerdown' && e.pointerType !== 'mouse') highlight(e.target)
+      },
+      { capture: true, passive: true },
+    )
 
   // --- dictation: the browser's speech recognition (Chrome, Edge, Safari), into the note being written.
   const Speech = window.SpeechRecognition || window.webkitSpeechRecognition
@@ -1352,7 +1689,13 @@
 
   function writeNote(at, x, y) {
     closePanel()
-    const close = () => form.remove()
+    const close = () => {
+      form.remove()
+      if (writing && writing.form === form) {
+        writing = null
+        sendCursor()
+      }
+    }
     const save = async (text) => {
       if (!text) return close()
       try {
@@ -1372,12 +1715,28 @@
       ta,
       h('div.row', {}, micButton(ta), h('button', { text: T.cancel, onclick: close }), h('button.ok', { text: T.save, onclick: () => save(ta.value.trim()) })),
     )
-    form.style.left = `${Math.max(8, Math.min(x, innerWidth - 330))}px`
-    form.style.top = `${Math.max(8, Math.min(y + 18, innerHeight - 190))}px`
     root.append(form)
+    writing = { form, at: { sel: at.selector, fx: at.fx, fy: at.fy, x: x / innerWidth, y: y + scrollY } }
+    sendCursor()
+    form.style.left = `${Math.max(8, Math.min(x, innerWidth - form.offsetWidth - 8))}px`
+    form.style.top = `${Math.max(8, Math.min(y + 18, innerHeight - form.offsetHeight - 8))}px`
     ta.focus()
+    if (touch()) aboveKeyboard(form)
     // ⌥ + click, and ⌥ still down: keep holding it and talk.
     if (held) holdToTalk(ta)
+  }
+
+  /** The on-screen keyboard takes the bottom of the screen: keep the card in what is left of it. */
+  function aboveKeyboard(card) {
+    const vv = window.visualViewport
+    if (!vv) return
+    const top = parseFloat(card.style.top)
+    const fit = () => {
+      if (!card.isConnected) return void vv.removeEventListener('resize', fit)
+      card.style.top = `${Math.max(8, Math.min(top, vv.offsetTop + vv.height - card.offsetHeight - 8))}px`
+    }
+    vv.addEventListener('resize', fit)
+    fit()
   }
 
   // --- the panel on a pin.
@@ -1532,6 +1891,29 @@
   setInterval(place, 1000)
   render()
 
+  // --- single-page apps: the router changes the path without a reload, and the overlay has to notice, or a note
+  // made after navigating would land on the first page, and others' pins would show as "on another page".
+  function onRoute() {
+    if (location.pathname === page) return
+    page = location.pathname
+    closePanel()
+    pins.dataset.sig = ''
+    render()
+    placeCursors()
+    sendCursor()
+  }
+  for (const k of ['pushState', 'replaceState']) {
+    const orig = history[k]
+    history[k] = function (...args) {
+      const r = orig.apply(this, args)
+      setTimeout(onRoute)
+      return r
+    }
+  }
+  addEventListener('popstate', onRoute)
+  // Routers that keep their own reference to pushState slip past the patch: check now and then too.
+  setInterval(onRoute, 500)
+
   // --- reloads (ours after a rebuild, or the dev server's HMR): back at the same scroll, mode and panel.
   try {
     const saved = JSON.parse(sessionStorage.getItem('pw-state') || 'null')
@@ -1541,13 +1923,14 @@
       const back = () => scrollTo(0, saved.y)
       document.readyState === 'complete' ? back() : addEventListener('load', back)
       setTimeout(back, 300)
+      for (const id of saved.justDone || []) justDone.add(id)
       if (saved.on) setTimeout(() => setOn(true), 50)
       if (saved.panel) setTimeout(() => openPanel(saved.panel), 300)
     }
   } catch {}
   addEventListener('pagehide', () => {
     try {
-      sessionStorage.setItem('pw-state', JSON.stringify({ path: location.pathname + location.search, y: scrollY, on, panel: panelId }))
+      sessionStorage.setItem('pw-state', JSON.stringify({ path: location.pathname + location.search, y: scrollY, on, panel: panelId, justDone: [...justDone] }))
     } catch {}
   })
   let pending = false
@@ -1557,4 +1940,49 @@
     location.reload()
   }
   setInterval(() => pending && reload(), 1000)
+
+  // --- hot updates that didn't land. The dev server sent new code (webpack, Rspack, Rsbuild: a .hot-update.js;
+  // Vite: a module with ?t=) but React didn't redraw with it: typically a remote in a shell whose React started
+  // before any refresh hook existed. Then the round button offers the reload instead of leaving the page stale.
+  const HOT = /\.hot-update\.[cm]?js(\?|$)|[?&]t=\d{10,}/
+  let lastCommit = 0
+  /** React's DevTools hook, with its commits counted. None: not React, its own HMR (or a reload) takes care. */
+  function reactHook() {
+    const hook = window.__REACT_DEVTOOLS_GLOBAL_HOOK__
+    if (!hook || hook.__pwCommits) return hook
+    const orig = hook.onCommitFiberRoot
+    hook.onCommitFiberRoot = function (...args) {
+      lastCommit = performance.now()
+      return typeof orig === 'function' ? orig.apply(this, args) : undefined
+    }
+    hook.__pwCommits = true
+    return hook
+  }
+  reactHook()
+  let staleTimer = null
+  function hotUpdate(at) {
+    const hook = reactHook()
+    // No hook, or only the one pinwright puts in a guest's shell and no React in it: not a React page.
+    if (!hook || (hook.__pw && !hook.renderers?.size)) return
+    clearTimeout(staleTimer)
+    // React Refresh redraws within a frame or two; give it time, then look.
+    staleTimer = setTimeout(() => {
+      // A commit after the update is the redraw. (renderers can stay empty even when it works: React Refresh's
+      // own fallback hook doesn't record them.)
+      const redrawn = lastCommit > at
+      if (redrawn) return
+      // No renderer on record and no DevTools extension: React Refresh's own stand-in hook, which a second app
+      // (a remote) can't reach React through. The extension's hook records it: suggest installing it.
+      const noDevtools = !hook.__pw && !(hook.renderers?.size) && !hook.rendererInterfaces
+      const tip = noDevtools ? T.staleDevtools : T.stale
+      stale.dataset.tip = tip
+      stale.setAttribute('aria-label', tip)
+      stale.hidden = false
+    }, 2000)
+  }
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) if (HOT.test(e.name) && !e.name.includes('/__pw/')) hotUpdate(e.startTime)
+    }).observe({ type: 'resource' })
+  } catch {}
 })()

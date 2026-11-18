@@ -78,8 +78,12 @@ export const launch = () => chromium.launch(process.env.CHROME_PATH ? { executab
  * "hears" window.__say (nothing by default) or fails with window.__speechError. `swallowKeys`: a page whose own
  * handlers eat every key before anyone else.
  */
-export async function newPage(browser, { headers, speech = false, swallowKeys = false } = {}) {
-  const ctx = await browser.newContext(headers ? { extraHTTPHeaders: headers } : {})
+export async function newPage(browser, { headers, speech = false, swallowKeys = false, phone = false } = {}) {
+  const ctx = await browser.newContext({
+    ...(headers ? { extraHTTPHeaders: headers } : {}),
+    // A phone: small screen, touch, no hover.
+    ...(phone ? { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 } : {}),
+  })
   const page = await ctx.newPage()
   await page.addInitScript(
     ({ speech, swallowKeys }) => {

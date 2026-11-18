@@ -52,6 +52,24 @@ export interface Config {
    * the remote inside. Default: the page Go live is pressed on.
    */
   shell?: string
+  /**
+   * Go live on a fixed address you run yourself (a Cloudflare tunnel, or any other), pointed at
+   * pinwright's port: no tunnel is opened, the links are built on it. For sites whose login only accepts known hosts.
+   */
+  publicUrl?: string
+  /**
+   * Go live through your named Cloudflare tunnel (`cloudflared tunnel create <name>`) instead of a quick tunnel,
+   * on `hostname`, which you routed to it (`cloudflared tunnel route dns <name> <hostname>`): the same address
+   * every time.
+   */
+  tunnel?: string
+  hostname?: string
+  /**
+   * Run when a share opens, and when it closes: a shell command (the public URL in PINWRIGHT_URL) or, in a JS
+   * config, a function of the URL. For setup outside pinwright, e.g. allowing the URL as a login redirect.
+   */
+  onShare?: string | ((url: string) => unknown)
+  onUnshare?: string | ((url: string) => unknown)
   /** cloudflared binary for live-session links. Default: on PATH, else downloaded once to ~/.cache/pinwright. */
   cloudflared?: string
   /** Who launched the daemon: the CLI installs process-wide handlers, plugins must not. */
