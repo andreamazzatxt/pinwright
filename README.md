@@ -3,7 +3,7 @@
 **Give Claude feedback right on your dev site.** Click the element that's wrong, write what you want, and a
 Claude agent edits your source while you keep reviewing. Up to 8 people can review the same page live.
 
-![pinwright: eight reviewers on the same page, each with their own cursor](docs/cover.png)
+![pinwright: eight reviewers on the same page, each with their own cursor](https://raw.githubusercontent.com/andreamazzatxt/pinwright/main/docs/cover.png)
 
 Asking a coding agent to fix a page usually goes: take a screenshot, switch to the terminal, paste it,
 describe the component ("the grey button under the title, no, the other one"), wait, switch back, check.
