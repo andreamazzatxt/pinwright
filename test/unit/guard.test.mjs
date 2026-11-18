@@ -2,7 +2,7 @@
 // Runs against the compiled package: build first (`npm test` does).
 import assert from 'node:assert/strict'
 import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { test } from 'node:test'
 import { bashVerdict, checkPath, guardHook } from '../../dist/guard.js'
 import { setup } from '../helpers/notes.mjs'
@@ -14,7 +14,7 @@ test('guard: shell denylist', () => {
 })
 
 test('guard: paths outside root or in protected dirs are refused', () => {
-  assert.deepEqual(checkPath('/p', 'src/a.ts'), { rel: 'src/a.ts', abs: '/p/src/a.ts' })
+  assert.deepEqual(checkPath('/p', 'src/a.ts'), { rel: 'src/a.ts', abs: resolve('/p', 'src/a.ts') })
   for (const p of ['/etc/passwd', '../x', 'node_modules/a.js', '.git/config', '.pinwright/db.sqlite', 'apps/x/node_modules/y.js']) assert.ok('error' in checkPath('/p', p), p)
 })
 

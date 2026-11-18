@@ -4,13 +4,13 @@
   "type": "module",
   "description": "Browser tests: real dev servers (Vite, Next.js, Rsbuild + Module Federation) behind pinwright, driven by Chrome.",
   "scripts": {
+    "postinstall": "node link-pinwright.mjs",
     "test": "node --test --test-concurrency=1 --test-timeout=600000 overlay.test.mjs frameworks.test.mjs mfe.test.mjs"
   },
   "devDependencies": {
     "@module-federation/runtime-tools": "^2.9.3",
     "@rsbuild/core": "^2.3.3",
     "next": "16.4.6",
-    "pinwright": "file:../..",
     "playwright-core": "1.63.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
