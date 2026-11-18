@@ -9,8 +9,6 @@ jobs:
   test:
     name: unit + integration (${{ matrix.os }}, node ${{ matrix.node }})
     runs-on: ${{ matrix.os }}
-    # Windows has never been tried: its results are reported, not enforced, until it passes.
-    continue-on-error: ${{ matrix.os == 'windows-latest' }}
     strategy:
       fail-fast: false
       matrix:
