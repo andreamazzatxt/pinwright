@@ -63,6 +63,55 @@ test('notes only inside --scope; the rest of the shell clicks as usual', async (
   assert.equal(await noteOpensOn(page, '#remote-button'), true)
 })
 
+test('a modal the remote renders through a React portal is in scope, and its focus trap leaves the note box alone', async () => {
+  const page = await newPage(browser)
+  await page.goto(`http://localhost:${SHELL_SITE}/`)
+  await page.locator('#remote-button').waitFor({ timeout: 60_000 })
+  await overlayReady(page)
+  // What React leaves on a portal's DOM: fibers whose parents lead back into the remote's tree (here, faked).
+  await page.evaluate((scope) => {
+    const mount = document.querySelector(scope)
+    const fiber = (stateNode, ret) => ({ stateNode, return: ret })
+    const add = (id, ret) => {
+      const box = document.createElement('div')
+      box.id = id
+      box.textContent = `${id} content`
+      box.style.cssText = 'position:fixed;top:200px;left:200px;padding:30px;background:#fff'
+      box.__reactFiber$test = fiber(box, fiber({ containerInfo: document.body }, ret))
+      document.body.append(box)
+      return box
+    }
+    add('remote-modal', fiber(mount, null))
+    add('shell-modal', null).style.left = '600px'
+    // A focus trap, the way MUI's works: focus that lands outside the modal is pulled back.
+    const modal = document.querySelector('#remote-modal')
+    modal.tabIndex = -1
+    document.addEventListener('focusin', () => {
+      if (!modal.contains(document.activeElement)) modal.focus()
+    })
+  }, SCOPE)
+  assert.equal(await noteOpensOn(page, '#shell-modal'), false)
+  assert.equal(await noteOpensOn(page, '#remote-modal'), true)
+  await page.keyboard.type('typed inside a modal')
+  assert.equal((await overlayState(page)).text, 'typed inside a modal')
+  await page.keyboard.press('Enter')
+  await sleep(300)
+  // The modal closes: its pin goes with it, and comes back with it.
+  const pinShown = () => page.evaluate(() => [...document.querySelector('pinwright-root').shadowRoot.querySelectorAll('.pin')].some((p) => p.style.display !== 'none' && /typed inside/.test(p.dataset.text)))
+  assert.equal(await pinShown(), true)
+  const modal = await page.evaluateHandle(() => document.querySelector('#remote-modal'))
+  const frame = () => page.evaluate(() => document.querySelector('pinwright-root').shadowRoot.querySelector('.scope').style.display)
+  // In note mode the frame marks the microfrontend, but not across its own modal.
+  assert.equal(await frame(), 'none')
+  await page.evaluate((m) => m.remove(), modal)
+  await sleep(200)
+  assert.equal(await pinShown(), false)
+  assert.equal(await frame(), 'block')
+  await page.evaluate((m) => document.body.append(m), modal)
+  await sleep(200)
+  assert.equal(await pinShown(), true)
+})
+
 test('the remote\'s HMR reaches the shell through pinwright', async () => {
   const page = await newPage(browser)
   await page.goto(`http://localhost:${SHELL_SITE}/`)

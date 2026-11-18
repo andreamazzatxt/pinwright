@@ -15,10 +15,33 @@
   const inScope = (el) => {
     if (!SCOPE) return true
     try {
-      return !!(el && el.closest && el.closest(SCOPE))
+      return !!(el && el.closest && (el.closest(SCOPE) || portalOf(el)))
     } catch {
       return true
     }
+  }
+  /**
+   * A modal, menu or tooltip the microfrontend renders through a React portal sits at the end of <body>, outside
+   * its mount point, but in React's tree it is still inside: walk the fibers up to an element in scope.
+   */
+  /** On a layer above the page (a modal, a drawer, a menu, a popover), which may close and take it along. */
+  function floats(el) {
+    if (el.closest('dialog,[role=dialog],[role=alertdialog],[aria-modal=true],[role=menu],[role=listbox],[popover]')) return true
+    if (SCOPE && !el.closest(SCOPE)) return true // a portal of the microfrontend
+    for (let node = el; node && node !== document.body; node = node.parentElement) if (getComputedStyle(node).position === 'fixed') return true
+    return false
+  }
+  function portalOf(el) {
+    for (let node = el; node && node !== document.body; node = node.parentElement) {
+      const key = Object.keys(node).find((k) => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'))
+      if (!key) continue
+      for (let f = node[key], n = 0; f && n < 5000; f = f.return, n++) {
+        const d = f.stateNode
+        if (d instanceof Element && d !== node && !node.contains(d) && d.closest(SCOPE)) return true
+      }
+      return false
+    }
+    return false
   }
   const tokensOf = (t) => (!t ? '0' : t >= 1e6 ? `${(t / 1e6).toFixed(1)}M` : t >= 1e3 ? `${Math.round(t / 1e3)}k` : String(t))
   const T = {
@@ -38,6 +61,7 @@
       save: 'Salva',
       close: 'Chiudi',
       stale: 'Ci sono aggiornamenti: clicca per caricarli',
+      addOne: 'Aggiungi una nota',
       staleDevtools: 'Ci sono aggiornamenti: clicca per caricarli.\n\nPer averli senza ricaricare, installa o attiva l’estensione React DevTools: senza, questa pagina non può applicare l’HMR del microfrontend.',
       del: 'Elimina',
       sure: 'Sicuro? Elimina',
@@ -111,6 +135,7 @@
       save: 'Save',
       close: 'Close',
       stale: 'New changes: click to load them',
+      addOne: 'Add a note',
       staleDevtools: 'New changes: click to load them.\n\nTo get them without a reload, install or enable the React DevTools extension: without it this page can’t apply the microfrontend’s hot updates.',
       del: 'Delete',
       sure: 'Sure? Delete',
@@ -182,6 +207,14 @@
   button.ib.stale svg{width:20px;height:20px}
   button.ib.stale::before{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:#ff3b6b;border:2px solid #fff}
   button.ib.stale[hidden]{display:none}
+  button.ib.addone{width:32px;height:40px;margin-bottom:3.5px;padding:0;background:none;border:0;border-radius:0;outline:none;-webkit-tap-highlight-color:transparent}
+  button.ib.addone:focus-visible .shape{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--pc,#ff3b6b),0 4px 12px rgb(0 0 0/.35)}
+  button.ib.addone .shape{display:grid;place-items:center;width:30px;height:30px;margin-top:6px;border-radius:50% 50% 50% 0;background:var(--pc,#ff3b6b);color:#fff;box-shadow:0 4px 12px rgb(0 0 0/.35);transform:rotate(-45deg);transition:translate .34s cubic-bezier(.2,.8,.2,1)}
+  button.ib.addone[data-on] .shape{translate:0 -3px}
+  button.ib.addone .shape i{position:relative;width:12px;height:12px;transform:rotate(45deg)}
+  button.ib.addone .shape i::before,button.ib.addone .shape i::after{content:"";position:absolute;left:5px;top:0;width:2.5px;height:12px;border-radius:2px;background:#fff}
+  button.ib.addone .shape i::after{transform:rotate(90deg)}
+  button.ib.addone:hover .shape{filter:brightness(1.1)}
   button.ib.stale[data-tip]:hover::after{width:260px;padding:8px 10px;white-space:pre-line;font:500 12px/1.4 system-ui,sans-serif}
   .hiddenchip{position:absolute;right:0;bottom:calc(100% + 8px);display:flex;align-items:center;gap:8px;padding:6px 12px 6px 8px;border:0;border-radius:999px;background:#fff;color:#121318;font:600 12px system-ui,sans-serif;white-space:nowrap;box-shadow:0 6px 18px rgb(0 0 0/.2);transition:opacity .25s ease,translate .25s ease}
   .hiddenchip[data-away]{opacity:0;translate:0 6px;pointer-events:none}
@@ -390,6 +423,9 @@
   style.textContent = css
   root.append(style)
   document.body.append(host)
+  // A React modal (MUI and the like) keeps focus inside itself: when our note box takes it, its focus trap sees the
+  // focus leave and pulls it back, and nothing can be typed. It learns that from focusin on the document: keep ours.
+  for (const t of ['focusin', 'focusout']) host.addEventListener(t, (e) => e.stopPropagation())
   // A modal dialog makes the rest of the page inert: the host moves inside it while it's open.
   const raise = () => {
     try {
@@ -511,6 +547,8 @@
   const cursors = new Map()
   // Holding ⌥ is a temporary note mode.
   let held = false
+  /** Note mode from the round + button (or a touch screen): one note, then it ends. */
+  let oneShot = false
   const active = () => on || held
   // A phone or a tablet: no hover and no ⌥. The button arms one note at a time, and a tap puts it there.
   const coarse = matchMedia('(hover: none) and (pointer: coarse)')
@@ -520,10 +558,19 @@
   const hl = h('div.hl')
   // Where notes are allowed: outlined, the rest of the page dimmed, while placing a note.
   const scopeFrame = h('div.scope')
+  /** One of the microfrontend's portals (a modal, a drawer) is showing, at the end of <body>. */
+  function layerOpen(scopeEl) {
+    for (const child of document.body.children) {
+      if (child === host || child.contains(scopeEl) || !child.getClientRects().length) continue
+      for (const el of [child, child.firstElementChild]) if (el && portalOf(el)) return true
+    }
+    return false
+  }
   function drawScope() {
     const el = SCOPE && active() ? (() => { try { return document.querySelector(SCOPE) } catch { return null } })() : null
     const r = el && el.getBoundingClientRect()
-    if (!r || !r.width) return void (scopeFrame.style.display = 'none')
+    // A drawer or modal of the microfrontend is open on top: it's where notes go now, so no frame across it.
+    if (!r || !r.width || layerOpen(el)) return void (scopeFrame.style.display = 'none')
     Object.assign(scopeFrame.style, { display: 'block', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px` })
   }
   addEventListener('scroll', () => drawScope(), { capture: true, passive: true })
@@ -554,7 +601,25 @@
       chipTimer = setTimeout(() => (hiddenChip.hidden = true), 300)
     }, 5000)
   }
-  const dock = h('div.dock', {}, people, stale, hub, hiddenChip)
+  // One note and done: arms note mode for a single click on the page, then it ends by itself.
+  // Shaped like the notes' pins, in my colour, with a +.
+  const addOne = h(
+    'button.ib.addone.ui',
+    {
+      'data-tip': T.addOne,
+      'aria-label': T.addOne,
+      onclick: (e) => {
+        e.stopPropagation()
+        // No focus ring left around it after a click: the pin itself shows the state.
+        e.currentTarget.blur()
+        if (on) return setOn(false)
+        oneShot = true
+        setOn(true)
+      },
+    },
+    h('span.shape', {}, h('i')),
+  )
+  const dock = h('div.dock', {}, people, stale, addOne, hub, hiddenChip)
   const pins = h('div')
   const cursorLayer = h('div')
   const toasts = h('div.toasts')
@@ -638,6 +703,10 @@
       const n = notes.find((x) => x.id === pin.dataset.id)
       if (!n) continue
       const el = findEl(n)
+      // Its modal or menu is closed: no pin where it used to be.
+      const gone = n.floating && (!el || !el.getClientRects().length)
+      pin.style.display = gone ? 'none' : ''
+      if (gone) continue
       let x = (n.pageX ?? 0) - scrollX
       let y = (n.pageY ?? 0) - scrollY
       if (el) {
@@ -688,6 +757,9 @@
     modeCursor()
     renderPeople()
     hub.toggleAttribute('data-on', on)
+    addOne.toggleAttribute('data-on', on && oneShot)
+    // My colour, the one my pins and pointer wear for the others.
+    addOne.style.setProperty('--pc', (me && me.color) || '#ff3b6b')
     hub.toggleAttribute('data-open', isOpen)
     hub.toggleAttribute('data-off', !online)
     hub.toggleAttribute('data-yolo', Boolean(shareLinks && yolo && me && !me.guest))
@@ -1434,6 +1506,7 @@
   // --- note mode.
   const setOn = (v) => {
     on = v
+    if (!v) oneShot = false
     if (!active()) hl.style.display = 'none'
     render()
   }
@@ -1540,9 +1613,10 @@
         pageX: e.pageX,
         pageY: e.pageY,
         viewport: `${innerWidth}x${innerHeight}`,
+        floating: floats(el),
       }
       // On a touch screen the button gives one note: the next tap is the page's again.
-      if (touch() && on) setOn(false)
+      if ((touch() || oneShot) && on) setOn(false)
       writeNote(at, e.clientX, e.clientY)
     },
     true,
@@ -1889,6 +1963,8 @@
   addEventListener('scroll', () => requestAnimationFrame(place), { passive: true, capture: true })
   addEventListener('load', place)
   setInterval(place, 1000)
+  // A modal or menu mounting or leaving (portals sit right under <body>): its pins follow at once.
+  new MutationObserver(() => requestAnimationFrame(() => (place(), drawScope()))).observe(document.body, { childList: true })
   render()
 
   // --- single-page apps: the router changes the path without a reload, and the overlay has to notice, or a note

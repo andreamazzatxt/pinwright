@@ -75,7 +75,9 @@ pinwright starts the remote's dev server and sits in front of it. Point your she
 instead of the remote's own port, then open the shell as usual: the overlay comes with the remote's JavaScript, the
 shell's URL and login don't change, and agents only edit the remote's code. `--scope` is the CSS selector of the
 remote's mount point: notes can only be placed inside it (it's outlined while you place one), and the rest of the
-shell keeps working. `npx pinwright` offers this mode by itself when the folder is a Module Federation remote.
+shell keeps working. Modals, menus and popovers the remote opens through a React portal count as inside, even
+though their DOM sits outside the mount point, and their focus traps leave the note box alone. A note pinned in
+one shows only while it's open. `npx pinwright` offers this mode by itself when the folder is a Module Federation remote.
 
 **Go live** works here too: press it on the shell page and guests get the shell with the remote inside, all through
 the one link. pinwright passes the shell along and points every `localhost` address in it (the remote's URL, its
@@ -187,7 +189,8 @@ All plugins take the same options as the config file: `pinwright({ port: 4350 })
 ## Writing notes
 
 Hold **⌥** and click anywhere to drop a note; the cursor turns into a pin while ⌥ is down. Or press **N** to
-enter note mode, then click.
+enter note mode, then click. The **+** pin next to the notes button gives one note: click it, click what's off,
+and note mode ends by itself.
 
 **On a phone.** Tap the button, then tap what's off: the note opens there, sized to the screen and above the
 keyboard. Each tap on the button gives one note, so the page works as usual in between. The mic button

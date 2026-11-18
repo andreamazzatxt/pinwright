@@ -324,6 +324,23 @@ test('while someone writes a note, the others see a pin in their colour there, w
   await b.waitForFunction(() => document.querySelector('pinwright-root').shadowRoot.querySelector('.pin.typing')?.style.display === 'none', null, { timeout: 5000 })
 })
 
+test('the round + button: one note, then note mode ends by itself; pressed again, it cancels', async () => {
+  const page = await newPage(browser)
+  await page.goto(url)
+  await overlayReady(page)
+  const add = page.locator('pinwright-root .addone')
+  await add.click()
+  assert.equal((await overlayState(page)).mode, true)
+  const box = await page.locator('#text').boundingBox()
+  await page.mouse.click(box.x + box.width - 30, box.y + 5)
+  assert.equal((await overlayState(page)).form, true)
+  assert.equal((await overlayState(page)).mode, false)
+  await page.keyboard.press('Escape')
+  await add.click()
+  await add.click()
+  assert.equal((await overlayState(page)).mode, false)
+})
+
 test('in note mode the button still offers Go live', async () => {
   const page = await newPage(browser)
   await page.goto(url)

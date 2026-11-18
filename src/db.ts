@@ -49,6 +49,7 @@ const MIGRATIONS = [
   `ALTER TABLE notes ADD COLUMN tokens INTEGER NOT NULL DEFAULT 0;`,
   `ALTER TABLE messages ADD COLUMN author TEXT;`,
   `ALTER TABLE notes ADD COLUMN guest INTEGER NOT NULL DEFAULT 0;`,
+  `ALTER TABLE notes ADD COLUMN floating INTEGER NOT NULL DEFAULT 0;`,
 ]
 
 export function openDb(root: string): DatabaseSync {

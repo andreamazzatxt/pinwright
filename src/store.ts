@@ -36,6 +36,8 @@ export interface Note {
   pageX: number | null
   pageY: number | null
   viewport: string | null
+  /** Pinned to something on top of the page (a modal, a menu): when it closes, the pin goes with it. */
+  floating: boolean
   text: string
   author: string | null
   approved: boolean
@@ -73,7 +75,7 @@ export interface Change {
   final: string | null
 }
 
-export type NewNote = Pick<Note, 'page' | 'text'> & Partial<Pick<Note, 'url' | 'selector' | 'element' | 'html' | 'styles' | 'fx' | 'fy' | 'pageX' | 'pageY' | 'viewport' | 'author' | 'approved' | 'guest'>>
+export type NewNote = Pick<Note, 'page' | 'text'> & Partial<Pick<Note, 'url' | 'selector' | 'element' | 'html' | 'styles' | 'fx' | 'fy' | 'pageX' | 'pageY' | 'viewport' | 'floating' | 'author' | 'approved' | 'guest'>>
 
 type Row = Record<string, unknown>
 
@@ -102,6 +104,7 @@ function toNote(r: Row): Note {
     pageX: (r.page_x as number) ?? null,
     pageY: (r.page_y as number) ?? null,
     viewport: (r.viewport as string) ?? null,
+    floating: Boolean(r.floating),
     text: r.text as string,
     author: (r.author as string) ?? null,
     approved: Boolean(r.approved),
@@ -161,6 +164,7 @@ export class Store {
       page_x: n.pageX ?? null,
       page_y: n.pageY ?? null,
       viewport: n.viewport ?? null,
+      floating: n.floating ? 1 : 0,
       text: n.text,
       author: n.author ?? null,
       approved: n.approved === false ? 0 : 1,

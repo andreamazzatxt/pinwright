@@ -204,6 +204,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
         pageX: num(b.pageX),
         pageY: num(b.pageY),
         viewport: str(b.viewport),
+        floating: b.floating === true,
         author: str(b.author),
         approved,
         // The review link's notes run under the guest rules; the YOLO link's run as the host's (full trust).
