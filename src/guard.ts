@@ -28,12 +28,53 @@ const PROTECTED: RegExp[] = [
 /** Files a guest's note may not even read: they could be copied into the page everyone sees. */
 const SECRET = /(^|\/)(\.env(\.[^/]*)?|\.npmrc|id_[a-z0-9]+|[^/]*\.(pem|key|p12|pfx|crt|keystore|jks)|credentials[^/]*|secrets?[^/]*)$/i
 
-/** Why a note may not edit this file, if it may not. */
+/**
+ * Files that run on this machine, not in the browser: a guest of the review link may not touch them. The host
+ * approves a note's text, not its diff, and the dev server runs whatever lands here at once.
+ */
+const SERVER_FILES: RegExp[] = [
+  // Nuxt/Nitro server/, Next pages/api and app/**/api, Netlify-style functions/.
+  /(^|\/)(server|api|middleware|functions)\//,
+  // Remix/React Router and SvelteKit server modules, SvelteKit endpoints.
+  /(^|\/)[^/]*\.server\.[^/]+$/,
+  /(^|\/)\+server\.[^/]+$/,
+  // Next route handlers (.ts/.js: no JSX), middleware/proxy, instrumentation, SvelteKit hooks.
+  /(^|\/)route\.[cm]?[jt]s$/,
+  /(^|\/)(middleware|proxy|instrumentation|hooks)\.[cm]?[jt]sx?$/,
+]
+
+/**
+ * Code that reaches the machine from code that renders on the server (Next.js server components, Astro
+ * frontmatter, loaders): env, processes, files, network, eval. A review-link note may not add any.
+ */
+const SERVER_CODE: RegExp[] = [
+  /\bprocess\s*\./,
+  /child_process|worker_threads|\bnode:[a-z]/,
+  /\brequire\s*\(/,
+  /\bimport\s*\(/,
+  /from\s+['"](fs|path|os|net|http|https|http2|child_process|crypto|vm|dgram|tls|cluster|dns|module|v8|inspector)(\/[^'"]*)?['"]/,
+  /\$env\/|import\.meta\.env/,
+  /\beval\s*\(|\bnew\s+Function\s*\(|\bFunction\s*\(\s*['"`]/,
+  /\b(Deno|Bun)\./,
+  /['"]use server['"]/,
+  /\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\s*\(|\bEventSource\s*\(|\bsendBeacon\b/,
+]
+
+const count = (re: RegExp, s: string) => (s.match(new RegExp(re.source, 'g')) ?? []).length
+
+/** Why `after` may not replace `before` in a review-link note: it adds code that reaches the machine. */
+export function codeVerdict(before: string, after: string): string | null {
+  const hit = SERVER_CODE.find((re) => count(re, after) > count(re, before))
+  return hit ? `a note from the review link may not add code that reaches the machine (env, processes, files, network, eval): ${hit.source}` : null
+}
+
+/** Why a note may not edit this file, if it may not. `guest`: from the review link (YOLO notes count as the host's). */
 export function editVerdict(rel: string, guest: boolean, guestDirs: string[]): string | null {
   if (PROTECTED.some((re) => re.test(rel))) return `${rel} is protected (configs, manifests, scripts and secrets can't be changed from a note)`
   if (guest && !rel.split('/').slice(0, -1).some((d) => guestDirs.includes(d))) {
     return `this note comes from a shared link: it may only change files under ${guestDirs.map((d) => `${d}/`).join(', ')}`
   }
+  if (guest && SERVER_FILES.some((re) => re.test(rel))) return `${rel} runs on the server: a note from the review link may only change what renders in the browser`
   return null
 }
 
@@ -87,6 +128,18 @@ export function checkPath(root: string, p: string): { rel: string; abs: string }
   return { rel: parts.join('/'), abs }
 }
 
+/** The text an edit replaces and the text it puts in its place. */
+function beforeAfter(name: string, ti: Record<string, unknown>, abs: string): [string, string] {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  if (name === 'Edit') return [str(ti.old_string), str(ti.new_string)]
+  if (name === 'MultiEdit' && Array.isArray(ti.edits)) {
+    const edits = ti.edits as Record<string, unknown>[]
+    return [edits.map((e) => str(e.old_string)).join('\n'), edits.map((e) => str(e.new_string)).join('\n')]
+  }
+  if (name === 'NotebookEdit') return ['', str(ti.new_source)]
+  return [existsSync(abs) ? readFileSync(abs, 'utf8') : '', str(ti.content)]
+}
+
 const deny = (reason: string): HookJSONOutput => ({
   hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
 })
@@ -111,7 +164,7 @@ export function guardHook(ctx: Ctx, noteId: string, beforeEdit: () => Promise<un
       const checked = checkPath(cfg.root, (ti.file_path ?? ti.notebook_path) as string)
       if ('error' in checked) return deny(checked.error)
       const { rel, abs } = checked
-      const refused = editVerdict(rel, guest, cfg.guestDirs)
+      const refused = editVerdict(rel, guest, cfg.guestDirs) ?? (guest ? codeVerdict(...beforeAfter(name, ti, abs)) : null)
       if (refused) return deny(`Not allowed: ${refused}.`)
       const other = locks.holder(rel, noteId)
       if (other) bus.setActivity(noteId, `Waiting for ${rel} (busy with note ${other})`)

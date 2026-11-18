@@ -1,0 +1,1 @@
+{ "name": "fixture-mf-shell", "private": true, "type": "module", "scripts": { "dev": "rsbuild dev" } }

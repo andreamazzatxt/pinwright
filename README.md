@@ -203,8 +203,11 @@ The **YOLO mode** switch picks which link you copy. It's off every time the page
 
 - **Off:** guests' notes, replies and retries wait as *To approve* until you press **Approve** (or
   **Discard**). A toast tells you when one arrives.
-- **On:** guests' notes go straight to the agents, like yours. Give this link only to people you'd let edit
-  your code.
+- **On:** guests' notes go straight to the agents and run as yours, with none of the guest limits below.
+  Your dev server runs the code they lead to, so whoever has this link can run code on your machine. Give it
+  only to people you'd hand your laptop to.
+
+Everyone with a link gets the whole dev server through it: the pages, and the sources and endpoints it serves.
 
 Both links stay valid at the same time. **Stop** closes the tunnel and voids them. Guests can't share,
 approve, or read the daemon's status.
@@ -222,11 +225,15 @@ outerHTML, computed styles) plus your project's `CLAUDE.md`.
 - No shell edits, no git history commands, no network, no installs, so undo always works.
 - No note may change what runs code on the next install, build or dev start: `package.json`, lockfiles,
   `*.config.*`, `.env*`, shell scripts, Dockerfiles, CI and editor folders.
-- **Guest notes** may only edit files under source and asset folders (`src/`, `public/`, `app/`, `pages/`,
-  `components/`, `styles/`, `assets/`…, configurable with `guestDirs`) and can't read secrets (`.env*`, keys,
-  certificates), so nothing private can be copied into the page.
-- The daemon binds `127.0.0.1` and only answers pages from localhost, plus visitors who arrive through the
-  tunnel with its token (exchanged once for an HttpOnly, SameSite cookie).
+- **Notes from the approval link** may only edit files under source and asset folders (`src/`, `public/`,
+  `app/`, `pages/`, `components/`, `styles/`, `assets/`…, configurable with `guestDirs`), and can't read
+  secrets (`.env*`, keys, certificates), so nothing private can be copied into the page. You approve their
+  text, not their diff, so they also stay off code that runs on your machine: server files (`server/`, `api/`,
+  `*.server.*`, route handlers, middleware, hooks) and, anywhere, new code that reaches env, processes, files,
+  the network or `eval`. YOLO-link notes count as yours.
+- The daemon binds `127.0.0.1` and only answers pages from localhost (by name, so a site that points its
+  domain at 127.0.0.1 is refused), plus visitors who arrive through the tunnel with its token (exchanged once
+  for an HttpOnly, SameSite cookie). Dev-server websockets pass through only for local pages.
 
 ## Config
 

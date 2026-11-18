@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import http from 'node:http'
 import { test } from 'node:test'
-import { injectIntoHtml } from '../dist/inject.js'
+import { injectIntoHtml } from '../../dist/inject.js'
 
 const TAG = '<script data-pinwright></script>'
 

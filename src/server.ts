@@ -32,8 +32,19 @@ const localOrigin = (port: string) => new RegExp(`(?:https?:)?(?:\\\\?/){2}(?:lo
 
 /** The origin the browser used to reach this server: the tunnel's https address, or localhost. */
 const publicOrigin = (req: IncomingMessage) => {
-  const https = req.headers['x-forwarded-proto'] === 'https' || Boolean(req.headers['cf-connecting-ip'])
+  const proto = req.headers['x-forwarded-proto']
+  const https = proto ? proto === 'https' : Boolean(req.headers['cf-connecting-ip'])
   return `${https ? 'https' : 'http'}://${req.headers.host ?? 'localhost'}`
+}
+
+/**
+ * DNS rebinding: a site whose name points at 127.0.0.1 reaches this server as its own origin. Local requests must
+ * name localhost; through the tunnel the name is the tunnel's, and the share token guards those.
+ */
+const hostOk = (req: IncomingMessage) => {
+  if (isRemote(req)) return true
+  const host = (req.headers.host ?? '').replace(/:\d+$/, '').toLowerCase()
+  return !host || host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '[::1]'
 }
 
 /** The list view: no html, styles or diff, which only the panel needs. */
@@ -159,7 +170,8 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
         viewport: str(b.viewport),
         author: str(b.author),
         approved,
-        guest: access !== 'host',
+        // The review link's notes run under the guest rules; the YOLO link's run as the host's (full trust).
+        guest: access === 'review',
       })
       cfg.log(`${note.id}: new note on ${note.page}${approved ? '' : ' (waiting for approval)'}: “${note.text.split('\n')[0].slice(0, 70)}”`)
       return json(res, light(note), 201)
@@ -180,7 +192,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
         const b = await readBody(req)
         switch (action) {
           case 'reply':
-            return json(res, light(ops.reply(id, String(b.text ?? ''), typeof b.author === 'string' ? b.author.slice(0, 60) : null, approved, access !== 'host')))
+            return json(res, light(ops.reply(id, String(b.text ?? ''), typeof b.author === 'string' ? b.author.slice(0, 60) : null, approved, access === 'review')))
           case 'approve':
             if (access !== 'host') throw new OpError('only the host can approve a note', 403)
             return json(res, light(ops.approve(id)))
@@ -324,6 +336,10 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x')
+    if (!hostOk(req)) {
+      res.writeHead(421, { 'content-type': 'text/plain; charset=utf-8' })
+      return void res.end('pinwright: open this page through localhost.')
+    }
     // Remote visitors (the shared link) need the token: from the link once, then from its cookie.
     const auth = collab.authorized(req, url.searchParams)
     if (auth === 'denied') {
@@ -400,8 +416,11 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
 
   server.on('upgrade', (req: IncomingMessage, socket: net.Socket, head: Buffer) => {
     const url = new URL(req.url ?? '/', 'http://x')
-    if (collab.authorized(req, url.searchParams) !== 'ok') return void socket.destroy()
+    if (!hostOk(req) || collab.authorized(req, url.searchParams) !== 'ok') return void socket.destroy()
     if (url.pathname === '/__pw/ws') return live(req, socket, url)
+    // The Origin is rewritten below so the dev server accepts it: only for pages that are local to begin with,
+    // or any site open in the browser could read the dev server's HMR stream.
+    if (!isRemote(req) && !isLocal(req.headers.origin)) return void socket.destroy()
     // HMR and other websockets go straight through to the target (for a microfrontend guest: shell or remote).
     const target = cfg.target ?? cfg.siteUrl
     if (!target) return void socket.destroy()
