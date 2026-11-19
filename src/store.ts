@@ -21,6 +21,16 @@ export const VISIBLE: Status[] = ['queued', 'planning', 'working', 'done', 'aski
 export interface Shots {
   before: string[]
   after: string[]
+  /** What the reviewer saw of the area they dragged out, taken in their browser. */
+  area?: string
+}
+
+/** An area dragged out on the page, in page pixels at the reviewer's viewport. */
+export interface Region {
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 export interface Note {
@@ -38,6 +48,8 @@ export interface Note {
   viewport: string | null
   /** Pinned to something on top of the page (a modal, a menu): when it closes, the pin goes with it. */
   floating: boolean
+  /** A note on an area rather than a point: the pin sits on its top-left corner. */
+  region: Region | null
   text: string
   author: string | null
   approved: boolean
@@ -75,7 +87,7 @@ export interface Change {
   final: string | null
 }
 
-export type NewNote = Pick<Note, 'page' | 'text'> & Partial<Pick<Note, 'url' | 'selector' | 'element' | 'html' | 'styles' | 'fx' | 'fy' | 'pageX' | 'pageY' | 'viewport' | 'floating' | 'author' | 'approved' | 'guest'>>
+export type NewNote = Pick<Note, 'page' | 'text'> & Partial<Pick<Note, 'url' | 'selector' | 'element' | 'html' | 'styles' | 'fx' | 'fy' | 'pageX' | 'pageY' | 'viewport' | 'floating' | 'region' | 'shots' | 'author' | 'approved' | 'guest'>>
 
 type Row = Record<string, unknown>
 
@@ -105,6 +117,7 @@ function toNote(r: Row): Note {
     pageY: (r.page_y as number) ?? null,
     viewport: (r.viewport as string) ?? null,
     floating: Boolean(r.floating),
+    region: parse(r.region, null),
     text: r.text as string,
     author: (r.author as string) ?? null,
     approved: Boolean(r.approved),
@@ -165,6 +178,8 @@ export class Store {
       page_y: n.pageY ?? null,
       viewport: n.viewport ?? null,
       floating: n.floating ? 1 : 0,
+      region: n.region ? JSON.stringify(n.region) : null,
+      ...(n.shots ? { shots: JSON.stringify(n.shots) } : {}),
       text: n.text,
       author: n.author ?? null,
       approved: n.approved === false ? 0 : 1,

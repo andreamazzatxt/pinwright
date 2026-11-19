@@ -48,7 +48,7 @@
     it: {
       notes: (n) => `Note (${n})`,
       waiting: (n) => ` · ${n} da rispondere`,
-      mode: 'Cosa non va? Cliccalo.',
+      mode: 'Cosa non va? Cliccalo, o trascina un’area.',
       tap: 'Tocca dove va la nota, o tieni premuto e parla',
       talkHold: 'Ti ascolto… alza il dito per salvare',
       talkRing: 'Ti ascolto',
@@ -77,6 +77,7 @@
       handoff: 'Passa a Claude Code',
       changes: (n) => `Modifiche (${n} file)`,
       before: 'Prima',
+      area: 'L’area selezionata',
       after: 'Dopo',
       you: 'Tu',
       agent: 'Claude',
@@ -124,7 +125,7 @@
     en: {
       notes: (n) => `Notes (${n})`,
       waiting: (n) => ` · ${n} to answer`,
-      mode: 'What’s off? Click it.',
+      mode: 'What’s off? Click it, or drag out an area.',
       tap: 'Tap where the note goes, or hold and talk',
       talkHold: 'Listening… lift your finger to save',
       talkRing: 'Listening',
@@ -153,6 +154,7 @@
       handoff: 'Hand off to Claude Code',
       changes: (n) => `Changes (${n} file${n === 1 ? '' : 's'})`,
       before: 'Before',
+      area: 'The area you selected',
       after: 'After',
       you: 'You',
       agent: 'Claude',
@@ -256,7 +258,8 @@
   .personcard p i{width:10px;height:10px;border-radius:50%;background:var(--pc)}
   .personcard .row{margin:0;justify-content:stretch}
   .personcard .row button{flex:1}
-  .followframe{position:fixed;inset:0;border:3px solid var(--pc);pointer-events:none}
+  .followframe{position:fixed;inset:0;border:3px solid var(--pc);pointer-events:none;transition:opacity .3s}
+  .followframe[data-away]{opacity:.45;border-style:dashed}
   .followframe button{position:absolute;top:8px;left:50%;translate:-50% 0;padding:5px 12px;border:0;border-radius:999px;background:var(--pc);color:#fff;font:600 12px system-ui,sans-serif;pointer-events:auto;box-shadow:0 6px 18px rgb(0 0 0/.25)}
   .followframe button small{margin-left:6px;opacity:.8;font-weight:500}
   /* The hub: a pill when closed, the dark notes card when open; one element, morphing between the two. */
@@ -347,6 +350,10 @@
   .list .live{position:relative}
   .scope{position:fixed;pointer-events:none;outline:2px solid rgb(255 59 107/.55);outline-offset:-1px;border-radius:4px;box-shadow:0 0 0 9999px rgb(18 19 24/.12);display:none}
   .hl{position:fixed;pointer-events:none;outline:2px dashed #ff3b6b;outline-offset:2px;border-radius:2px;display:none}
+  .areabox{position:fixed;pointer-events:none;border:2px dashed var(--pc,#ff3b6b);border-radius:4px;background:color-mix(in srgb,var(--pc,#ff3b6b) 10%,transparent);box-sizing:border-box}
+  .areabox[hidden]{display:none}
+  .areashot{display:block;margin:8px 0;border-radius:6px;overflow:hidden;border:1px solid #e3e5ea;background:#f5f6f8}
+  .areashot img{display:block;width:100%;max-height:220px;object-fit:contain}
   .pin{position:fixed;display:grid;place-items:center;width:28px;height:28px;margin:-28px 0 0 0;border-radius:50% 50% 50% 0;background:var(--c);color:#fff;font:800 13px system-ui,sans-serif;box-shadow:0 4px 12px rgb(0 0 0/.35);cursor:pointer;transform:rotate(-45deg);transform-origin:0 100%}
   .pin i{font-style:normal;transform:rotate(45deg)}
   .pin:hover::after{content:attr(data-text);position:absolute;left:34px;top:0;width:max-content;max-width:280px;padding:8px 10px;border-radius:10px;background:#121318;color:#fff;font:500 13px/1.35 system-ui,sans-serif;white-space:pre-wrap;transform:rotate(45deg);transform-origin:0 0}
@@ -530,6 +537,12 @@
   let on = false
   let target = null
   let panelId = null
+  /** A click on one of the page's links that the overlay itself makes (see softNav): not a note. */
+  let navClick = false
+  /** An area being dragged out with the mouse in note mode. */
+  let drag = null
+  /** The area of the note being written: its box stays on the page until the card closes. */
+  let writingArea = null
   // Done notes stay out of the way unless asked for; the choice sticks per browser.
   let showDone = false
   try {
@@ -648,7 +661,9 @@
   const toasts = h('div.toasts')
   // Press and hold on a phone: a ring around the finger, then the note is dictated.
   const talkRing = h('div.talkring', { hidden: true }, h('b', {}, h('i'), T.talkRing))
-  root.append(scopeFrame, hl, pins, cursorLayer, toasts, dock, talkRing)
+  // An area being dragged out, or the one of the note being written or looked at.
+  const areaBox = h('div.areabox', { hidden: true })
+  root.append(scopeFrame, hl, areaBox, pins, cursorLayer, toasts, dock, talkRing)
 
   // The dock can be dragged anywhere on the screen, and stays there on this site. Kept on screen as it grows.
   let dockAt = null
@@ -816,6 +831,27 @@
       const pin = [...pins.children].find((p) => p.dataset.id === panel.dataset.id)
       if (pin) position(panel, pin.getBoundingClientRect())
     }
+    placeArea()
+  }
+  /** The area being written about, or the one of the open panel's note, from its pin (its top-left corner). */
+  function placeArea() {
+    if (drag && drag.moved) return
+    let box = null
+    if (writingArea && writingArea.form.isConnected) {
+      const r = writingArea.region
+      box = { left: r.x - scrollX, top: r.y - scrollY, w: r.w, h: r.h }
+    } else {
+      const n = panelId && notes.find((x) => x.id === panelId)
+      const pin = n && n.region && [...pins.children].find((p) => p.dataset.id === n.id)
+      if (pin && pin.style.display !== 'none') box = { left: parseFloat(pin.style.left), top: parseFloat(pin.style.top), w: n.region.w, h: n.region.h }
+    }
+    areaBox.hidden = !box
+    if (box) showArea(box)
+  }
+  function showArea(b) {
+    areaBox.style.setProperty('--pc', (me && me.color) || '#ff3b6b')
+    Object.assign(areaBox.style, { left: `${b.left}px`, top: `${b.top}px`, width: `${b.w}px`, height: `${b.h}px` })
+    areaBox.hidden = false
   }
   function position(card, r) {
     const w = card.offsetWidth || 400
@@ -1017,7 +1053,7 @@
           onclick: () => {
             // Clicked in the list: its pin comes back.
             if (hiddenPins.delete(n.id)) saveHidden()
-            if (!here) return void (location.href = n.page)
+            if (!here) return void navigate(n.page)
             render()
             focusPin(n.id)
           },
@@ -1120,8 +1156,11 @@
   /** A small card above my chip to choose my name; it sticks in this browser. */
   // --- follow: go where someone is, once, or keep going wherever they go (page and scroll) until I move myself.
   let following = null
+  /** Name and colour of whom I follow, for while they're away. */
+  let followed = null
   try {
     following = sessionStorage.getItem('pw-follow')
+    followed = JSON.parse(sessionStorage.getItem('pw-follow-who') || 'null')
   } catch {}
   const followFrame = h('div.followframe', { hidden: true })
   root.append(followFrame)
@@ -1154,13 +1193,78 @@
     const d = cursors.get(id)?.data
     const where = d?.page ?? peers.find((x) => x.id === id)?.page
     if (where && where !== page) {
+      pendingGo = d && typeof d.sy === 'number' ? { path: where, d } : null
       try {
-        if (d && typeof d.sy === 'number') sessionStorage.setItem('pw-goto', JSON.stringify({ path: where, d }))
+        if (pendingGo) sessionStorage.setItem('pw-goto', JSON.stringify(pendingGo))
       } catch {}
-      return void (location.href = where)
+      return void navigate(where)
     }
     if (!d || typeof d.sy !== 'number') return
     scrollTo({ top: Math.max(0, d.sy + (d.vh || innerHeight) / 2 - innerHeight / 2), behavior: smooth ? 'smooth' : 'auto' })
+  }
+
+  /** Where catching up is taking me, to scroll there once the page has changed under the router. */
+  let pendingGo = null
+  let goingTo = null
+  /** Another page of the site, without a full reload where the site's router lets us: following stays smooth. */
+  function navigate(where) {
+    if (goingTo && goingTo.path === where && Date.now() - goingTo.at < 4000) return
+    goingTo = { path: where, at: Date.now() }
+    const url = new URL(where, location.href)
+    if (!softNav(url)) {
+      console.info('[pinwright] follow: no router to change page with, reloading to', where)
+      return void (location.href = where)
+    }
+    // The router didn't take it (a page it doesn't own, a guard): the old way.
+    setTimeout(() => {
+      if (goingTo && goingTo.path === where && location.pathname !== url.pathname) {
+        console.info('[pinwright] follow: the router did not move to', where, '- reloading')
+        location.href = where
+      }
+    }, 2500)
+  }
+  /** The site's own router: Next's, Vue's (Nuxt too), or a link to that page its link component handles. */
+  function softNav(url) {
+    if (url.origin !== location.origin) return false
+    const to = url.pathname + url.search + url.hash
+    try {
+      const r = window.next && window.next.router
+      if (r && typeof r.push === 'function') return r.push(to), true
+    } catch {}
+    try {
+      const app = (document.querySelector('#__nuxt') || document.querySelector('[data-v-app]'))?.__vue_app__
+      const r = app && app.config.globalProperties.$router
+      if (r && typeof r.push === 'function') return r.push(to), true
+    } catch {}
+    // React Router, SvelteKit, Astro and the like turn a click on their own links into a client-side navigation.
+    const a = [...document.querySelectorAll('a[href]')].find(
+      (a) => a.origin === url.origin && a.pathname === url.pathname && a.search === url.search && (!a.target || a.target === '_self') && !a.hasAttribute('download') && !a.closest('[inert]'),
+    )
+    if (!a) return popRoute(to)
+    navClick = true
+    try {
+      a.click()
+    } finally {
+      navClick = false
+    }
+    return true
+  }
+
+  /**
+   * Routers that navigate in code (a button calling navigate(), no link on the page) still follow the address bar
+   * when the browser goes back or forward: a new history entry shaped like theirs, then the event they listen to.
+   * Only for routers recognised by their entries (React Router, TanStack Router), so another page never gets an
+   * address its router didn't draw.
+   */
+  function popRoute(to) {
+    const st = history.state
+    let next = null
+    if (st && typeof st === 'object' && 'key' in st && typeof st.idx === 'number') next = { usr: null, key: Math.random().toString(36).slice(2, 10), idx: st.idx + 1 }
+    else if (st && typeof st === 'object' && typeof st.__TSR_index === 'number') next = { ...st, __TSR_index: st.__TSR_index + 1, __TSR_key: Math.random().toString(36).slice(2, 10), key: undefined }
+    if (!next) return false
+    history.pushState(next, '', to)
+    dispatchEvent(new PopStateEvent('popstate', { state: next }))
+    return true
   }
 
   function goTo(id) {
@@ -1169,8 +1273,11 @@
   }
   function follow(id) {
     following = id
+    const p = peers.find((x) => x.id === id)
+    if (p) followed = { name: p.name, color: p.color }
     try {
       sessionStorage.setItem('pw-follow', id)
+      sessionStorage.setItem('pw-follow-who', JSON.stringify(followed))
     } catch {}
     renderFollow()
     catchUp(id, true)
@@ -1180,13 +1287,18 @@
     following = null
     try {
       sessionStorage.removeItem('pw-follow')
+      sessionStorage.removeItem('pw-follow-who')
     } catch {}
     renderFollow()
   }
   /** The frame in their colour, and the pill that says whom I follow (a click stops it). */
   function renderFollow() {
-    const p = following && peers.find((x) => x.id === following)
+    const here = following && peers.find((x) => x.id === following)
+    if (here) followed = { name: here.name, color: here.color }
+    // Gone for a moment (a reload, a hot update, the connection coming back): still following, dimmed, until they're back.
+    const p = here || (following && followed && { ...followed, id: following })
     followFrame.hidden = !p
+    followFrame.toggleAttribute('data-away', Boolean(p && !here))
     if (p) {
       followFrame.style.setProperty('--pc', p.color)
       followFrame.replaceChildren(h('button.ui', { onclick: (e) => (e.stopPropagation(), unfollow()) }, T.following(p.name), h('small', { text: T.stopHint })))
@@ -1527,8 +1639,8 @@
         cursors.delete(id)
       }
     }
-    if (following && !peers.some((p) => p.id === following)) unfollow()
-    else renderFollow()
+    // Whom I follow may be gone only for a moment (a reload): keep following, and catch up when they're back.
+    renderFollow()
     render()
     // Somebody new: tell them where my pointer is.
     sendCursor()
@@ -1677,6 +1789,8 @@
   document.addEventListener(
     'click',
     (e) => {
+      // Ours, on a link of the page, to change page through its router (following someone).
+      if (navClick) return
       // The click a press and hold may leave behind: the note it dictates stays open.
       if (swallowClick && !fromUs(e)) {
         swallowClick = false
@@ -1784,7 +1898,7 @@
   // A long press would open the page's menu (or the browser's) under the finger, or lift an image to drag it.
   for (const type of ['contextmenu', 'dragstart', 'selectstart'])
     addEventListener(type, (e) => {
-      if (press || (touch() && active() && !fromUs(e))) e.preventDefault()
+      if (press || (active() && !fromUs(e) && (touch() || type === 'dragstart'))) e.preventDefault()
     }, true)
   function talkAt(el, x, y) {
     if (!press) return
@@ -1811,7 +1925,142 @@
     if (dx) label.style.translate = `calc(-50% + ${dx}px) 0`
     navigator.vibrate?.(15)
   }
+  // --- an area instead of a point: in note mode, drag out a rectangle with the mouse. The note is about what is
+  // inside, and the agent gets a picture of it as it looks here (signed in, the modal open, the data loaded).
+  addEventListener(
+    'pointerdown',
+    (e) => {
+      if (e.pointerType !== 'mouse' || e.button || !active() || fromUs(e) || !inScope(e.target) || root.querySelector('.form')) return
+      drag = { id: e.pointerId, x: e.clientX + scrollX, y: e.clientY + scrollY, el: e.target, moved: false }
+    },
+    true,
+  )
+  /** The rectangle between where the drag started and the pointer, on screen. */
+  function dragRect(cx, cy, d = drag) {
+    const x1 = d.x - scrollX
+    const y1 = d.y - scrollY
+    const left = Math.max(0, Math.min(x1, cx))
+    const top = Math.max(0, Math.min(y1, cy))
+    return { left, top, w: Math.min(innerWidth, Math.max(x1, cx)) - left, h: Math.min(innerHeight, Math.max(y1, cy)) - top }
+  }
+  addEventListener(
+    'pointermove',
+    (e) => {
+      if (!drag || e.pointerId !== drag.id) return
+      if (!drag.moved) {
+        if (Math.hypot(e.clientX + scrollX - drag.x, e.clientY + scrollY - drag.y) < 8) return
+        drag.moved = true
+        hl.style.display = 'none'
+        void loadSnap().catch(() => {})
+      }
+      drag.last = { x: e.clientX, y: e.clientY }
+      showArea(dragRect(e.clientX, e.clientY))
+    },
+    { capture: true, passive: true },
+  )
+  addEventListener(
+    'scroll',
+    () => {
+      if (drag && drag.moved && drag.last) showArea(dragRect(drag.last.x, drag.last.y))
+    },
+    { capture: true, passive: true },
+  )
+  const endDrag = (e) => {
+    if (!drag || e.pointerId !== drag.id) return
+    const d = drag
+    drag = null
+    if (!d.moved) return
+    // The click the browser sends after the drag isn't a click on an element.
+    swallowClick = true
+    setTimeout(() => (swallowClick = false), 400)
+    const r = dragRect(e.clientX, e.clientY, d)
+    if (e.type === 'pointercancel' || r.w < 12 || r.h < 12) return void placeArea()
+    areaNote(r, d.el)
+  }
+  addEventListener('pointerup', endDrag, true)
+  addEventListener('pointercancel', endDrag, true)
+
+  /** The smallest element around the whole area: the note's anchor, what the agent looks for in the code. */
+  function areaAnchor(r, fallback) {
+    const pts = [
+      [r.left + 2, r.top + 2],
+      [r.left + r.w - 2, r.top + 2],
+      [r.left + 2, r.top + r.h - 2],
+      [r.left + r.w - 2, r.top + r.h - 2],
+      [r.left + r.w / 2, r.top + r.h / 2],
+    ]
+    const els = pts.map(([x, y]) => document.elementsFromPoint(x, y).find((el) => el !== host && !host.contains(el))).filter(Boolean)
+    let a = els[0] || fallback
+    for (const el of els) while (a && !a.contains(el)) a = a.parentElement
+    a = a || document.body
+    const fits = (el) => {
+      const b = el.getBoundingClientRect()
+      return b.left <= r.left + 2 && b.top <= r.top + 2 && b.right >= r.left + r.w - 2 && b.bottom >= r.top + r.h - 2
+    }
+    while (a.parentElement && a !== document.body && !fits(a)) a = a.parentElement
+    if (a === document.documentElement) a = document.body
+    return inScope(a) ? a : fallback
+  }
+  function areaNote(r, startEl) {
+    const anchor = areaAnchor(r, startEl)
+    const at = { ...noteAt(anchor, r.left, r.top), region: { x: r.left + scrollX, y: r.top + scrollY, w: r.w, h: r.h } }
+    const shot = snapArea(anchor, r).catch(() => null)
+    if ((touch() || oneShot) && on) setOn(false)
+    writeNote(at, r.left, Math.min(r.top + r.h, innerHeight - 40), { shot })
+  }
+
+  /** The picture library, from the daemon, the first time an area is dragged out. */
+  let snapLib = null
+  const loadSnap = () => (snapLib ??= import(`${API}/snap.js`).catch((e) => ((snapLib = null), Promise.reject(e))))
+  /** What the page shows in the area, drawn from the DOM (no screen-sharing prompt), as a JPEG data URL. */
+  async function snapArea(anchor, r) {
+    // Drawn on its own, an element whose first child's top margin pokes out of it (it has no padding or border on
+    // top, isn't a flex box…) comes out shifted by that margin: start from one that holds its children's margins.
+    for (; anchor !== document.documentElement; anchor = anchor.parentElement) {
+      const cs = getComputedStyle(anchor)
+      if (
+        parseFloat(cs.paddingTop) > 0 ||
+        parseFloat(cs.borderTopWidth) > 0 ||
+        /flex|grid|inline|flow-root|table/.test(cs.display) ||
+        cs.overflow !== 'visible' ||
+        /absolute|fixed/.test(cs.position) ||
+        cs.float !== 'none'
+      )
+        break
+    }
+    const a = anchor.getBoundingClientRect()
+    const off = { x: r.left - a.left, y: r.top - a.top }
+    const lib = await loadSnap()
+    // Sharp on a retina screen, but never a canvas too big for the browser (a long page's <body>).
+    const scale = Math.max(0.25, Math.min(2, devicePixelRatio || 1, Math.sqrt(16e6 / Math.max(1, a.width * a.height))))
+    let bg = '#fff'
+    for (let el = anchor; el; el = el.parentElement) {
+      const c = getComputedStyle(el).backgroundColor
+      if (c && c !== 'transparent' && !/rgba\(.*,\s*0\)$/.test(c)) {
+        bg = c
+        break
+      }
+    }
+    // The page itself holds its body's margins as the root; its copy has to be told.
+    const style = anchor === document.documentElement ? { display: 'flow-root' } : undefined
+    const full = await lib.domToCanvas(anchor, { scale, backgroundColor: bg, style, filter: (n) => n !== host, timeout: 8000 })
+    const k = Math.min(scale, 1600 / r.w)
+    const out = document.createElement('canvas')
+    out.width = Math.max(1, Math.round(r.w * k))
+    out.height = Math.max(1, Math.round(r.h * k))
+    out.getContext('2d').drawImage(full, off.x * scale, off.y * scale, r.w * scale, r.h * scale, 0, 0, out.width, out.height)
+    return out.toDataURL('image/jpeg', 0.85)
+  }
+
   // In note mode a press on the page is ours: its menus and drags don't start under the note being placed.
+  // With a mouse it doesn't start a text selection either, so dragging out an area doesn't paint the page blue.
+  document.addEventListener(
+    'mousedown',
+    (e) => {
+      if (!e.button && active() && !fromUs(e) && inScope(e.target) && !root.querySelector('.form')) e.preventDefault()
+    },
+    true,
+  )
   for (const type of ['pointerdown', 'mousedown', 'touchstart'])
     document.addEventListener(
       type,
@@ -1998,10 +2247,14 @@
   }
 
   /** `talk`: from a press and hold on a phone, dictated with no keyboard until the finger lifts. */
-  function writeNote(at, x, y, { talk = false } = {}) {
+  function writeNote(at, x, y, { talk = false, shot = null } = {}) {
     closePanel()
     const close = () => {
       form.remove()
+      if (writingArea && writingArea.form === form) {
+        writingArea = null
+        placeArea()
+      }
       if (writing && writing.form === form) {
         writing = null
         sendCursor()
@@ -2010,7 +2263,9 @@
     const save = async (text) => {
       if (!text) return close()
       try {
-        const n = await api('/notes', { method: 'POST', body: { ...at, text, author: me ? me.name : null } })
+        // An area's picture is usually ready long before the note is; a slow one doesn't hold the note back for long.
+        const pic = shot ? await Promise.race([shot, new Promise((ok) => setTimeout(() => ok(null), 10000))]) : null
+        const n = await api('/notes', { method: 'POST', body: { ...at, text, author: me ? me.name : null, ...(pic ? { shot: pic } : {}) } })
         upsert(n)
         close()
         render()
@@ -2027,6 +2282,10 @@
       h('div.row', {}, micButton(ta), h('button', { text: T.cancel, onclick: close }), h('button.ok', { text: T.save, onclick: () => save(ta.value.trim()) })),
     )
     root.append(form)
+    if (at.region) {
+      writingArea = { form, region: at.region }
+      placeArea()
+    }
     writing = { form, at: { sel: at.selector, fx: at.fx, fy: at.fy, x: x / innerWidth, y: y + scrollY } }
     sendCursor()
     form.style.left = `${Math.max(8, Math.min(x, innerWidth - form.offsetWidth - 8))}px`
@@ -2055,12 +2314,14 @@
   function closePanel() {
     root.querySelector('.panel')?.remove()
     panelId = null
+    placeArea()
   }
 
   async function openPanel(id) {
     root.querySelector('.form')?.remove()
     closePanel()
     panelId = id
+    placeArea()
     await refreshPanel()
   }
 
@@ -2107,7 +2368,9 @@
   function shotsView(shots) {
     const before = shots.before || []
     const after = shots.after || []
-    if (!before.length && !after.length) return null
+    const area = shots.area ? h('a.areashot', { href: `${API}/shots/${shots.area}`, target: '_blank', rel: 'noopener', title: T.area }, h('img', { src: `${API}/shots/${shots.area}`, alt: T.area })) : null
+    if (!before.length && !after.length) return area
+    if (area) return h('div', {}, area, shotsView({ before, after }))
     const img = (f) => (f ? h('a', { href: `${API}/shots/${f}`, target: '_blank', rel: 'noopener' }, h('img', { src: `${API}/shots/${f}`, loading: 'lazy', alt: '' })) : h('div'))
     const rows = []
     for (let i = 0; i < Math.max(before.length, after.length); i++) rows.push(img(before[i]), img(after[i]))
@@ -2210,6 +2473,18 @@
   function onRoute() {
     if (location.pathname === page) return
     page = location.pathname
+    goingTo = null
+    // Arrived where catching up was taking me without a reload: their place on the page, once it has drawn.
+    if (pendingGo && pendingGo.path === page) {
+      const g = pendingGo.d
+      pendingGo = null
+      try {
+        sessionStorage.removeItem('pw-goto')
+      } catch {}
+      const there = () => scrollTo(0, Math.max(0, g.sy + (g.vh || innerHeight) / 2 - innerHeight / 2))
+      setTimeout(there, 80)
+      setTimeout(there, 600)
+    }
     closePanel()
     pins.dataset.sig = ''
     render()

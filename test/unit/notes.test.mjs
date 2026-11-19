@@ -74,3 +74,16 @@ test('a guest reply turns the note into a guest note', async () => {
   store.update(n.id, { status: 'done' })
   assert.equal(ops.reply(n.id, 'more', 'Gufo', true, true).guest, true)
 })
+
+test('an area note keeps its rectangle and its picture, and the prompt says what they are', async () => {
+  const { store } = await setup()
+  const { notePrompt } = await import('../../dist/agent.js')
+  const n = store.create({ page: '/', text: 'tidy this', selector: 'main > section', region: { x: 10, y: 20, w: 300, h: 120 }, shots: { before: [], after: [], area: 'area-x.jpg' } })
+  assert.deepEqual(n.region, { x: 10, y: 20, w: 300, h: 120 })
+  assert.equal(n.shots.area, 'area-x.jpg')
+  // Later shots don't lose it.
+  const m = store.update(n.id, { shots: { ...n.shots, after: ['a.jpg'] } })
+  assert.equal(m.shots.area, 'area-x.jpg')
+  assert.match(notePrompt(n), /dragged out an area of 300×120px at 10,20 on the page: the image shows what they saw there/)
+  assert.doesNotMatch(notePrompt(store.create({ page: '/', text: 'plain' })), /area/)
+})

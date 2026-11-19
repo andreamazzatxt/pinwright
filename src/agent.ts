@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { query, type HookCallback } from '@anthropic-ai/claude-agent-sdk'
+import { basename, join } from 'node:path'
+import { query, type HookCallback, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { createTwoFilesPatch } from 'diff'
 import { agentEnv, langName, type Ctx } from './context.js'
 import { canUseTool, guardHook, NETWORK_TOOLS } from './guard.js'
@@ -48,6 +48,9 @@ export function notePrompt(note: Note): string {
       : '',
     `Page: ${note.page}${note.url ? ` (${note.url})` : ''}`,
     note.viewport ? `Reviewer's viewport: ${note.viewport}` : '',
+    note.region
+      ? `The reviewer dragged out an area of ${Math.round(note.region.w)}×${Math.round(note.region.h)}px at ${Math.round(note.region.x)},${Math.round(note.region.y)} on the page${note.shots.area ? ': the image shows what they saw there. The note is about that area as a whole; the element below is the smallest one around it' : ''}.`
+      : '',
     note.selector ? `Pinned element: \`${note.selector}\`, at ${pct(note.fx)} across and ${pct(note.fy)} down inside it` : '',
     note.element ? `Element text: ${JSON.stringify(note.element)}` : '',
   ]
@@ -56,6 +59,26 @@ export function notePrompt(note: Note): string {
     lines.push('', 'Computed styles:', Object.entries(note.styles).map(([k, v]) => `${k}: ${v}`).join('; '))
   }
   return lines.filter((l, i, a) => l !== '' || a[i - 1] !== '').join('\n')
+}
+
+/** The picture of a dragged-out area, as the overlay took it, if it is still there. */
+function areaImage(ctx: Ctx, note: Note): string | null {
+  const file = note.shots.area && join(ctx.shooter.dir, basename(note.shots.area))
+  return file && existsSync(file) ? readFileSync(file).toString('base64') : null
+}
+
+async function* withImage(text: string, jpeg: string): AsyncGenerator<SDKUserMessage> {
+  yield {
+    type: 'user',
+    parent_tool_use_id: null,
+    message: {
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: jpeg } },
+        { type: 'text', text },
+      ],
+    },
+  }
 }
 
 /** What the reviewer said since the agent last spoke: the prompt for a resumed session. */
@@ -166,7 +189,10 @@ export async function runNote(ctx: Ctx, note: Note, abort: AbortController): Pro
 
   const timeout = setTimeout(() => abort.abort(new Error('timeout')), cfg.timeoutMin * 60_000)
   try {
-    const prompt = resume ? followUpPrompt(ctx, note) : notePrompt(note) + threadPrompt(ctx, note)
+    const text = resume ? followUpPrompt(ctx, note) : notePrompt(note) + threadPrompt(ctx, note)
+    // A new session for an area note gets the picture with the text (a resumed one already has it).
+    const image = resume ? null : areaImage(ctx, note)
+    const prompt = image ? withImage(text, image) : text
     bus.setActivity(note.id, resume ? 'Resuming' : 'Starting')
     const stream = query({
       prompt,
@@ -277,7 +303,7 @@ async function afterShots(ctx: Ctx, id: string, diff: string): Promise<void> {
     if (!note) return
     const after = await shootAll(ctx, note, 'after')
     const cur = ctx.store.get(id)
-    if (cur && after.length) ctx.store.update(id, { shots: { before: cur.shots.before, after } })
+    if (cur && after.length) ctx.store.update(id, { shots: { ...cur.shots, after } })
   } catch (e) {
     ctx.cfg.log(`${id}: after shots failed: ${(e as Error).message}`)
   }

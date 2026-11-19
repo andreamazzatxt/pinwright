@@ -192,6 +192,10 @@ Hold **⌥** and click anywhere to drop a note; the cursor turns into a pin whil
 enter note mode, then click. The **+** pin next to the notes button gives one note: click it, click what's off,
 and note mode ends by itself.
 
+**About an area.** In note mode, drag out a rectangle instead of clicking: the note is about everything inside it.
+pinwright draws what that part of the page looks like in your browser (signed in, with the modal open and the
+data loaded) and the agent gets that picture with the note. The panel shows it too, and the area on the page.
+
 **On a phone.** Tap the button, then tap what's off: the note opens there, sized to the screen and above the
 keyboard. Each tap on the button gives one note, so the page works as usual in between. The mic button
 dictates. Or press and hold the spot instead of tapping it: a ring grows around your finger, then it pulses
@@ -225,7 +229,8 @@ replies, and sees everyone's cursor, each with its own colour and a made-up name
 need a browser.
 
 Click someone's avatar to **Go to** them (their page, scrolled where they are) or **Follow** them: your view keeps
-up with theirs, page changes included, until you scroll yourself or press Esc. In a session your own pointer wears
+up with theirs, page changes included, until you scroll yourself or press Esc. On a single-page app the page
+changes through the site's own router (Next.js, Vue and Nuxt, or the links on the page), so it doesn't reload. In a session your own pointer wears
 your colour, the one the others see, and while someone writes a note the others see a pin in their colour
 where it goes, with dots.
 

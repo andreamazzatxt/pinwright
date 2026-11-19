@@ -1,6 +1,6 @@
 {
   "name": "pinwright",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Give Claude feedback right on your dev site: click an element, write a note, an agent edits your source.",
   "type": "module",
   "license": "MIT",
@@ -56,6 +56,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.323",
     "diff": "^9.0.0",
+    "modern-screenshot": "4.7.0",
     "zod": "^4.6.7"
   },
   "optionalDependencies": {

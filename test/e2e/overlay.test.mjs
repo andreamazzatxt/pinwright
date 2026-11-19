@@ -378,6 +378,83 @@ test('Follow: my view keeps up with theirs, across pages, until I scroll myself'
   assert.ok(Math.abs((await a.evaluate(() => scrollY)) - 2500) > 300, 'no longer following')
 })
 
+test('Follow across a client-side route: the router moves my page too, without reloading it', async () => {
+  const [a, b] = await twoPeople()
+  await otherChip(a).click()
+  await a.locator('pinwright-root .personcard button', { hasText: 'Follow' }).click()
+  await a.evaluate(() => (window.__noReload = true))
+  await b.locator('#spa-link').click()
+  await b.mouse.move(250, 250)
+  await a.waitForFunction(() => location.pathname === '/spa-route', null, { timeout: 5000 })
+  assert.equal(await a.evaluate(() => window.__noReload), true, 'same document: no full reload')
+  assert.equal(await followFrameShown(a), true, 'still following')
+  await a.goBack()
+})
+
+test('Follow lasts through their reload, and a router that navigates in code moves me without a reload', async () => {
+  const [a, b] = await twoPeople()
+  // A React Router-like page: its entries carry key and idx, and it redraws on popstate from the address bar.
+  const router = () => {
+    history.replaceState({ usr: null, key: 'start', idx: 0 }, '')
+    window.__pops = []
+    addEventListener('popstate', () => window.__pops.push(location.pathname))
+  }
+  await a.evaluate(router)
+  await otherChip(a).click()
+  await a.locator('pinwright-root .personcard button', { hasText: 'Follow' }).click()
+  await a.evaluate(() => (window.__noReload = true))
+  // They reload: gone from the session for a moment, and back.
+  await b.reload()
+  await overlayReady(b)
+  await b.mouse.move(200, 200)
+  await sleep(800)
+  assert.equal(await followFrameShown(a), true, 'still following after their reload')
+  // They move on in code (navigate() on a button: no link to that page anywhere).
+  await b.evaluate(() => history.pushState({ usr: null, key: 'next', idx: 1 }, '', '/rr-route'))
+  await b.mouse.move(260, 240)
+  await a.waitForFunction(() => location.pathname === '/rr-route', null, { timeout: 5000 })
+  assert.equal(await a.evaluate(() => window.__noReload), true, 'same document: no full reload')
+  assert.deepEqual(await a.evaluate(() => window.__pops), ['/rr-route'], 'the router heard it')
+  assert.equal(await a.evaluate(() => history.state.idx), 1)
+  assert.equal(await followFrameShown(a), true)
+})
+
+test('note mode: dragging out an area writes a note on it, with a picture of what was there', async () => {
+  const page = await newPage(browser)
+  await page.goto(url)
+  await overlayReady(page)
+  await page.locator('pinwright-root .hub').click()
+  const t = await page.locator('#title').boundingBox()
+  const c = await page.locator('#cta').boundingBox()
+  await page.mouse.move(t.x - 4, t.y - 4)
+  await page.mouse.down()
+  await page.mouse.move(c.x + c.width + 6, c.y + c.height + 6, { steps: 10 })
+  const during = await page.evaluate(() => {
+    const box = document.querySelector('pinwright-root').shadowRoot.querySelector('.areabox')
+    return { shown: !box.hidden, w: box.getBoundingClientRect().width, selected: String(getSelection()) }
+  })
+  await page.mouse.up()
+  assert.equal(during.shown, true, 'the area shows while dragging')
+  assert.ok(during.w > 50)
+  assert.equal(during.selected, '', 'no text selection')
+  assert.equal((await overlayState(page)).form, true, 'the card opened, not swallowed by the click after the drag')
+  await page.keyboard.type('tighten this whole block')
+  await page.keyboard.press('Enter')
+  await page.waitForFunction(() => fetch('/__pw/notes').then((r) => r.json()).then((ns) => ns.some((n) => n.text === 'tighten this whole block')))
+  const n = (await notes(page)).find((x) => x.text === 'tighten this whole block')
+  assert.ok(n.region && Math.abs(n.region.x - (t.x - 4)) < 2 && n.region.w > 50, JSON.stringify(n.region))
+  assert.match(n.shots.area || '', /^area-.*\.jpg$/)
+  const img = await page.evaluate((f) => fetch(`/__pw/shots/${f}`).then(async (r) => ({ type: r.headers.get('content-type'), size: (await r.arrayBuffer()).byteLength })), n.shots.area)
+  assert.equal(img.type, 'image/jpeg')
+  assert.ok(img.size > 1000, JSON.stringify(img))
+  // The panel shows the picture, and the area on the page.
+  await page.keyboard.press('Escape')
+  await page.locator(`pinwright-root .pin[data-id="${n.id}"]`).click()
+  await page.locator('pinwright-root .panel .areashot img').waitFor()
+  assert.equal(await page.evaluate(() => !document.querySelector('pinwright-root').shadowRoot.querySelector('.areabox').hidden), true)
+  assert.deepEqual(page.errors, [])
+})
+
 test('in a live session my own pointer wears my colour', async () => {
   const [a] = await twoPeople()
   const color = await a.evaluate(() => document.querySelector('pinwright-root').shadowRoot.querySelector('.people span.me').style.getPropertyValue('--pc'))

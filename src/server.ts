@@ -1,4 +1,5 @@
-import { createReadStream, existsSync, readFileSync } from 'node:fs'
+import { randomBytes } from 'node:crypto'
+import { createReadStream, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import net from 'node:net'
 import { basename, dirname, join } from 'node:path'
@@ -12,6 +13,8 @@ import type { Note } from './store.js'
 import { loaderCode } from './inject.js'
 
 const OVERLAY = join(dirname(fileURLToPath(import.meta.url)), '..', 'overlay', 'overlay.js')
+/** Draws a piece of the page into an image, in the reviewer's browser: loaded the first time an area is dragged out. */
+const SNAP = fileURLToPath(import.meta.resolve('modern-screenshot'))
 export const SCRIPT_PATH = '/__pw/overlay.js'
 
 const isLocal = (origin: string | undefined) => {
@@ -107,6 +110,17 @@ function readBody(req: IncomingMessage, limit = 256_000): Promise<Record<string,
   })
 }
 
+/** The overlay's JPEG of a dragged-out area, as a data URL: written next to the other screenshots. */
+export function saveArea(dir: string, shot: unknown): string | null {
+  const m = typeof shot === 'string' && shot.match(/^data:image\/jpeg;base64,([A-Za-z0-9+/=]+)$/)
+  if (!m) return null
+  const data = Buffer.from(m[1], 'base64')
+  if (data[0] !== 0xff || data[1] !== 0xd8) return null
+  const file = `area-${Date.now().toString(36)}${randomBytes(3).toString('hex')}.jpg`
+  writeFileSync(join(dir, file), data)
+  return file
+}
+
 export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: Collab): http.Server {
   const { cfg, store, bus } = ctx
   /** Open live channels (WebSocket), with the person each belongs to and whether it comes from outside. */
@@ -171,6 +185,10 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
         return json(res, { ok: true })
       }
     }
+    if (path === '/snap.js') {
+      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'max-age=3600', 'access-control-allow-origin': '*' })
+      return void createReadStream(SNAP).pipe(res)
+    }
     if (path.startsWith('/shots/')) {
       const file = join(ctx.shooter.dir, basename(path))
       if (!existsSync(file)) return json(res, { error: 'not found' }, 404)
@@ -186,11 +204,15 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
       return json(res, (all ? store.list(['queued', 'planning', 'working', 'done', 'asking', 'handoff', 'failed', 'archived', 'undone', 'taken']) : store.list()).map(light))
     }
     if (path === '/notes' && m === 'POST') {
-      const b = await readBody(req)
+      // Room for the picture of a dragged-out area.
+      const b = await readBody(req, 8_000_000)
       if (typeof b.text !== 'string' || !b.text.trim() || typeof b.page !== 'string') throw new OpError('text and page are required')
       const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
       const str = (v: unknown) => (typeof v === 'string' ? v : null)
       const styles = b.styles && typeof b.styles === 'object' ? (b.styles as Record<string, string>) : null
+      const r = b.region as Record<string, unknown> | undefined
+      const region = r && typeof r === 'object' && [r.x, r.y, r.w, r.h].every((v) => num(v) !== null) ? { x: r.x as number, y: r.y as number, w: r.w as number, h: r.h as number } : null
+      const area = region ? saveArea(ctx.shooter.dir, b.shot) : null
       const note = store.create({
         page: b.page,
         text: b.text.trim(),
@@ -205,6 +227,8 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
         pageY: num(b.pageY),
         viewport: str(b.viewport),
         floating: b.floating === true,
+        region,
+        ...(area ? { shots: { before: [], after: [], area } } : {}),
         author: str(b.author),
         approved,
         // The review link's notes run under the guest rules; the YOLO link's run as the host's (full trust).
