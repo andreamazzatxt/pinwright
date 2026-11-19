@@ -123,7 +123,7 @@ export const overlayState = (page) =>
     const s = document.querySelector('pinwright-root').shadowRoot
     const ta = s.querySelector('.form textarea')
     return {
-      mode: document.documentElement.hasAttribute('data-pw-mode'),
+      mode: document.querySelector('pinwright-root').hasAttribute('data-mode'),
       list: !s.querySelector('.list').hidden,
       highlight: s.querySelector('.hl')?.style.display === 'block',
       form: !!ta,

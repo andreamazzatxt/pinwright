@@ -194,7 +194,11 @@ and note mode ends by itself.
 
 **On a phone.** Tap the button, then tap what's off: the note opens there, sized to the screen and above the
 keyboard. Each tap on the button gives one note, so the page works as usual in between. The mic button
-dictates.
+dictates. Or press and hold the spot instead of tapping it: a ring grows around your finger, then it pulses
+while you talk, and lifting the finger saves the note as said.
+
+**Move it out of the way.** Drag the notes button (and the pins next to it) anywhere on the screen; it stays
+there on that site.
 
 **Say it instead.** Keep holding ⌥ after the click and talk: the note fills in as you speak, and letting go
 of ⌥ saves it as it is. Holding ⌥ in any note or reply box does the same. The mic button starts and stops

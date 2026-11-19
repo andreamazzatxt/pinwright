@@ -187,6 +187,85 @@ test('on a phone: the button arms one note, a tap puts it there, the card fits t
   assert.deepEqual(page.errors, [])
 })
 
+test('on a phone, press and hold in note mode: a ring around the finger, the note is dictated, lifting saves it', async () => {
+  const page = await newPage(browser, { phone: true, speech: true })
+  await page.goto(url)
+  await overlayReady(page)
+  await page.evaluate(() => (window.__say = 'said with a finger down'))
+  await page.locator('pinwright-root .hub').tap()
+  const box = await page.locator('#title').boundingBox()
+  const pt = { x: box.x + box.width - 30, y: box.y + box.height / 2 }
+  // The pins earlier tests left on the title stay out of the finger's way.
+  await page.evaluate(() => document.querySelector('pinwright-root').shadowRoot.querySelectorAll('.pin').forEach((p) => (p.style.pointerEvents = 'none')))
+  const cdp = await page.context().newCDPSession(page)
+  const touch = (type) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x: pt.x, y: pt.y }] })
+  await touch('touchStart')
+  await sleep(800)
+  const ring = await page.evaluate(() => {
+    const r = document.querySelector('pinwright-root').shadowRoot.querySelector('.talkring')
+    return { shown: !r.hidden, state: r.dataset.state, left: parseFloat(r.style.left), top: parseFloat(r.style.top) }
+  })
+  assert.equal(ring.shown, true)
+  assert.equal(ring.state, 'rec')
+  assert.ok(Math.abs(ring.left - pt.x) < 2 && Math.abs(ring.top - pt.y) < 2, JSON.stringify(ring))
+  assert.equal((await overlayState(page)).text, 'said with a finger down')
+  // Note mode is over by now, but the finger is still down: no iOS menu, link preview or selection under it.
+  const still = () => page.evaluate(() => [document.querySelector('pinwright-root').hasAttribute('data-press'), getComputedStyle(document.querySelector('#title')).userSelect])
+  assert.deepEqual(await still(), [true, 'none'])
+  // Safari ends its recognizer by itself after a moment: with the finger still down, listening goes on.
+  await page.evaluate(() => {
+    window.__say = 'and a bit more'
+    window.__recognizers.at(-1).onend()
+  })
+  await sleep(200)
+  assert.equal(await page.evaluate(() => window.__recognizers.length), 2)
+  assert.equal((await overlayState(page)).text, 'said with a finger down and a bit more')
+  // Or it fails along the way: still the finger is down, so a new one listens, and nothing said is lost.
+  await page.evaluate(() => {
+    window.__say = ''
+    const r = window.__recognizers.at(-1)
+    r.onerror({ error: 'network' })
+    r.onend()
+  })
+  await sleep(200)
+  assert.equal(await page.evaluate(() => window.__recognizers.length), 3)
+  assert.equal((await overlayState(page)).text, 'said with a finger down and a bit more')
+  await touch('touchEnd')
+  await sleep(400)
+  const saved = (await notes(page)).find((n) => n.text === 'said with a finger down and a bit more')
+  assert.ok(saved, 'note saved')
+  assert.equal(saved.selector, '#title')
+  const after = await page.evaluate(() => document.querySelector('pinwright-root').shadowRoot.querySelector('.talkring').hidden)
+  assert.equal(after, true)
+  assert.equal((await overlayState(page)).form, false)
+  assert.deepEqual(await still(), [false, 'auto'])
+  assert.deepEqual(page.errors, [])
+})
+
+test('the notes pill can be dragged; it stays where it was dropped, and the drag is not a click', async () => {
+  const page = await newPage(browser)
+  await page.goto(url)
+  await overlayReady(page)
+  const hub = page.locator('pinwright-root .hub')
+  const a = await hub.boundingBox()
+  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(a.x - 200, a.y - 150, { steps: 8 })
+  await page.mouse.up()
+  const b = await hub.boundingBox()
+  assert.ok(Math.abs(b.x - (a.x - 200 - a.width / 2)) < 3 && Math.abs(b.y - (a.y - 150 - a.height / 2)) < 3, JSON.stringify({ a, b }))
+  assert.equal((await overlayState(page)).mode, false, 'the drag did not turn note mode on')
+  await page.reload()
+  await overlayReady(page)
+  const c = await hub.boundingBox()
+  assert.ok(Math.abs(c.x - b.x) < 3 && Math.abs(c.y - b.y) < 3, JSON.stringify({ b, c }))
+  // Still a button: a click turns note mode on.
+  await hub.click()
+  assert.equal((await overlayState(page)).mode, true)
+  await page.evaluate(() => localStorage.removeItem('pw-dock'))
+  assert.deepEqual(page.errors, [])
+})
+
 test('dictation: hold ⌥ after the click, talk, let go: the note is saved as said', async () => {
   const page = await newPage(browser, { speech: true })
   await page.goto(url)

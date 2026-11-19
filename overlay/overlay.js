@@ -49,7 +49,9 @@
       notes: (n) => `Note (${n})`,
       waiting: (n) => ` · ${n} da rispondere`,
       mode: 'Cosa non va? Cliccalo.',
-      tap: 'Tocca dove va la nota',
+      tap: 'Tocca dove va la nota, o tieni premuto e parla',
+      talkHold: 'Ti ascolto… alza il dito per salvare',
+      talkRing: 'Ti ascolto',
       notesN: (n) => `Note ${n}`,
       write: 'Scrivi la nota…',
       talk: 'Detta: tieni premuto ⌥ o clicca',
@@ -123,7 +125,9 @@
       notes: (n) => `Notes (${n})`,
       waiting: (n) => ` · ${n} to answer`,
       mode: 'What’s off? Click it.',
-      tap: 'Tap where the note goes',
+      tap: 'Tap where the note goes, or hold and talk',
+      talkHold: 'Listening… lift your finger to save',
+      talkRing: 'Listening',
       notesN: (n) => `Notes ${n}`,
       write: 'Write the note…',
       talk: 'Dictate: hold ⌥ or click',
@@ -203,6 +207,25 @@
   input,textarea{cursor:text}
   .dock{position:fixed;right:16px;bottom:16px;display:flex;gap:8px;align-items:flex-end}
   .dock .people{align-self:flex-end;padding-bottom:7px}
+  .dock{touch-action:none}
+  .dock .list,.dock textarea,.dock input{touch-action:auto}
+  .dock[data-drag],.dock[data-drag] *{cursor:grabbing!important;user-select:none}
+  .dock[data-drag] .hub{box-shadow:0 16px 40px rgb(0 0 0/.4)}
+  .talkring{position:fixed;z-index:3;width:104px;height:104px;margin:-52px 0 0 -52px;border-radius:50%;pointer-events:none;--pc:#ff3b6b}
+  .talkring[hidden]{display:none}
+  .talkring::before,.talkring::after{content:"";position:absolute;inset:0;border-radius:50%;border:3px solid var(--pc)}
+  .talkring[data-state=charge]::before{animation:charge .45s ease-out both}
+  .talkring[data-state=charge]::after{display:none}
+  .talkring[data-state=rec]{background:radial-gradient(circle,transparent 42%,color-mix(in srgb,var(--pc) 22%,transparent) 43%,transparent 70%)}
+  .talkring[data-state=rec]::before,.talkring[data-state=rec]::after{animation:ripple 1.3s ease-out infinite}
+  .talkring[data-state=rec]::after{animation-delay:.65s}
+  .talkring b{position:absolute;left:50%;bottom:calc(100% + 10px);translate:-50% 0;display:flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;background:#121318;color:#fff;font:700 13px system-ui,-apple-system,sans-serif;white-space:nowrap;box-shadow:0 6px 18px rgb(0 0 0/.3)}
+  .talkring[data-below] b{top:calc(100% + 10px);bottom:auto}
+  .talkring[data-state=charge] b{display:none}
+  .talkring b i{width:8px;height:8px;border-radius:50%;background:#ff3b30;animation:blink 1s ease-in-out infinite}
+  @keyframes charge{from{scale:.35;opacity:0}to{scale:1;opacity:.9}}
+  @keyframes ripple{from{scale:.75;opacity:.95}to{scale:1.7;opacity:0}}
+  @keyframes blink{50%{opacity:.25}}
   button.ib.stale{width:44px;height:44px;margin-bottom:2px;background:#fff;box-shadow:0 10px 30px rgb(0 0 0/.3);animation:pop .18s ease-out}
   button.ib.stale svg{width:20px;height:20px}
   button.ib.stale::before{content:"";position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;background:#ff3b6b;border:2px solid #fff}
@@ -623,7 +646,67 @@
   const pins = h('div')
   const cursorLayer = h('div')
   const toasts = h('div.toasts')
-  root.append(scopeFrame, hl, pins, cursorLayer, toasts, dock)
+  // Press and hold on a phone: a ring around the finger, then the note is dictated.
+  const talkRing = h('div.talkring', { hidden: true }, h('b', {}, h('i'), T.talkRing))
+  root.append(scopeFrame, hl, pins, cursorLayer, toasts, dock, talkRing)
+
+  // The dock can be dragged anywhere on the screen, and stays there on this site. Kept on screen as it grows.
+  let dockAt = null
+  try {
+    dockAt = JSON.parse(localStorage.getItem('pw-dock') || 'null')
+  } catch {}
+  function placeDock() {
+    if (!dockAt) return
+    const r = dock.getBoundingClientRect()
+    dock.style.right = `${Math.round(Math.max(8, Math.min(dockAt.right, innerWidth - r.width - 8)))}px`
+    dock.style.bottom = `${Math.round(Math.max(8, Math.min(dockAt.bottom, innerHeight - r.height - 8)))}px`
+  }
+  /** A drag just ended: the click that follows it isn't one. */
+  let dragged = false
+  dock.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.composedPath()[0].closest?.('textarea,input,select,a,.list')) return
+    const r = dock.getBoundingClientRect()
+    const start = { x: e.clientX, y: e.clientY, right: innerWidth - r.right, bottom: innerHeight - r.bottom }
+    let moving = false
+    const move = (ev) => {
+      if (ev.pointerId !== e.pointerId) return
+      const dx = ev.clientX - start.x
+      const dy = ev.clientY - start.y
+      if (!moving && Math.hypot(dx, dy) < 6) return
+      if (!moving) {
+        moving = true
+        dock.setAttribute('data-drag', '')
+        root.querySelectorAll('[data-tip]:hover').forEach((t) => t.blur())
+      }
+      dockAt = { right: start.right - dx, bottom: start.bottom - dy }
+      placeDock()
+    }
+    const up = (ev) => {
+      if (ev.pointerId !== e.pointerId) return
+      removeEventListener('pointermove', move, true)
+      removeEventListener('pointerup', up, true)
+      removeEventListener('pointercancel', up, true)
+      if (!moving) return
+      dock.removeAttribute('data-drag')
+      dragged = true
+      setTimeout(() => (dragged = false), 0)
+      try {
+        localStorage.setItem('pw-dock', JSON.stringify(dockAt))
+      } catch {}
+    }
+    addEventListener('pointermove', move, true)
+    addEventListener('pointerup', up, true)
+    addEventListener('pointercancel', up, true)
+  })
+  dock.addEventListener('click', (e) => {
+    if (!dragged) return
+    dragged = false
+    e.stopPropagation()
+    e.preventDefault()
+  }, true)
+  new ResizeObserver(placeDock).observe(dock)
+  addEventListener('resize', placeDock)
+  placeDock()
 
   // The page's own cursor during note mode: a pin in my colour, tip on the hotspot. Needs a light-DOM rule.
   const modeStyle = document.createElement('style')
@@ -634,10 +717,19 @@
     // In a live session my pointer is an arrow in my colour, as the others see it. Not !important: links,
     // fields and the page's own cursors keep theirs.
     const arrow = `<svg xmlns='http://www.w3.org/2000/svg' width='18' height='22' viewBox='0 0 18 22'><path d='M1 1v17l4.5-4.2 3.2 7.2 3-1.3-3.2-7H15z' fill='${c}' stroke='white' stroke-width='1.5' stroke-linejoin='round'/></svg>`
+    // The state is on our own element, never on the page's <html>: a framework hydrating the page would find
+    // attributes its server didn't render (React reports a mismatch). The rules are only in while they apply.
+    const mode = host.hasAttribute('data-mode')
+    const live = host.hasAttribute('data-live')
+    const press = host.hasAttribute('data-press')
     // Our own cards keep the normal cursor: the pin is only for the page.
-    const css = `html[data-pw-live]{cursor:url("data:image/svg+xml,${encodeURIComponent(arrow)}") 1 1,auto}html[data-pw-mode],html[data-pw-mode] *{cursor:url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 24,crosshair!important}html[data-pw-mode] pinwright-root{cursor:default!important}`
+    const css = (live ? `html{cursor:url("data:image/svg+xml,${encodeURIComponent(arrow)}") 1 1,auto}` : '')
+      + (mode ? `html,html *{cursor:url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 24,crosshair!important}html pinwright-root{cursor:default!important}` : '')
       // iOS sends a tap's click only to what looks clickable: during note mode, everything does.
-      + (touch() ? 'html[data-pw-mode] *{cursor:pointer!important}' : '')
+      + (touch() && mode ? 'html *{cursor:pointer!important}html pinwright-root{cursor:default!important}' : '')
+      // No iOS menus, link previews, image drags or text selection under a press: not in note mode, and not for
+      // the rest of a press and hold either (note mode ends as the note opens, the finger is still down).
+      + (touch() && (mode || press) ? 'html *{-webkit-touch-callout:none!important;-webkit-user-select:none!important;user-select:none!important;-webkit-user-drag:none!important}' : '')
     if (modeStyle.textContent !== css) modeStyle.textContent = css
   }
   modeCursor()
@@ -752,8 +844,8 @@
     const waiting = all.filter((n) => n.status === 'asking').length
     const toApprove = access === 'host' ? visible().filter((n) => stOf(n) === 'review').length : 0
     renderFace(open, waiting, toApprove)
-    document.documentElement.toggleAttribute('data-pw-mode', active())
-    document.documentElement.toggleAttribute('data-pw-live', Boolean(me && peers.length > 1))
+    host.toggleAttribute('data-mode', active())
+    host.toggleAttribute('data-live', Boolean(me && peers.length > 1))
     modeCursor()
     renderPeople()
     hub.toggleAttribute('data-on', on)
@@ -1585,6 +1677,13 @@
   document.addEventListener(
     'click',
     (e) => {
+      // The click a press and hold may leave behind: the note it dictates stays open.
+      if (swallowClick && !fromUs(e)) {
+        swallowClick = false
+        e.preventDefault()
+        e.stopPropagation()
+        return
+      }
       if (fromUs(e)) return
       // A click outside closes whatever is open. If a card was open, the click only closes it.
       const card = root.querySelector('.form') || panelId
@@ -1598,29 +1697,120 @@
       if (card) return
       const el = e.target
       hl.style.display = 'none'
-      // The router may have just moved on, ahead of our check (input runs before timers when the page is busy).
-      onRoute()
-      const r = el.getBoundingClientRect()
-      const at = {
-        page,
-        url: location.href,
-        selector: sel(el),
-        element: textOf(el),
-        html: el.outerHTML.slice(0, 1500),
-        styles: stylesOf(el),
-        fx: r.width ? (e.clientX - r.left) / r.width : 0,
-        fy: r.height ? (e.clientY - r.top) / r.height : 0,
-        pageX: e.pageX,
-        pageY: e.pageY,
-        viewport: `${innerWidth}x${innerHeight}`,
-        floating: floats(el),
-      }
+      const at = noteAt(el, e.clientX, e.clientY)
       // On a touch screen the button gives one note: the next tap is the page's again.
       if ((touch() || oneShot) && on) setOn(false)
       writeNote(at, e.clientX, e.clientY)
     },
     true,
   )
+  /** What a note placed on `el` at this point of the screen records. */
+  function noteAt(el, x, y) {
+    // The router may have just moved on, ahead of our check (input runs before timers when the page is busy).
+    onRoute()
+    const r = el.getBoundingClientRect()
+    return {
+      page,
+      url: location.href,
+      selector: sel(el),
+      element: textOf(el),
+      html: el.outerHTML.slice(0, 1500),
+      styles: stylesOf(el),
+      fx: r.width ? (x - r.left) / r.width : 0,
+      fy: r.height ? (y - r.top) / r.height : 0,
+      pageX: x + scrollX,
+      pageY: y + scrollY,
+      viewport: `${innerWidth}x${innerHeight}`,
+      floating: floats(el),
+    }
+  }
+
+  // On a phone in note mode, press and hold a spot: a ring grows around the finger, then the note there is
+  // dictated while the finger stays down. Lifting it saves the note. A tap still opens a note to type.
+  let press = null
+  let swallowClick = false
+  function hideRing() {
+    talkRing.hidden = true
+  }
+  function endPress(e) {
+    if (!press || (e && e.pointerId !== press.id)) return
+    clearTimeout(press.timer)
+    const talking = press.talking
+    press = null
+    host.removeAttribute('data-press')
+    modeCursor()
+    if (!talking) return hideRing()
+    // Some browsers still send a click after a long press: it isn't a tap.
+    swallowClick = true
+    setTimeout(() => (swallowClick = false), 600)
+    hideRing()
+    releaseTalk()
+  }
+  addEventListener(
+    'pointerdown',
+    (e) => {
+      if (!Speech || !touch() || e.pointerType === 'mouse' || !active() || fromUs(e) || !inScope(e.target) || root.querySelector('.form')) return
+      endPress()
+      host.setAttribute('data-press', '')
+      modeCursor()
+      const { clientX: x, clientY: y, target: el } = e
+      press = { id: e.pointerId, x, y, talking: false, quick: 0, timer: setTimeout(() => talkAt(el, x, y), 450) }
+      // The ring starts filling at once, so a hold is felt before it counts; a tap is too quick to show it.
+      press.show = setTimeout(() => {
+        if (!press || press.talking) return
+        talkRing.style.left = `${x}px`
+        talkRing.style.top = `${y}px`
+        talkRing.style.setProperty('--pc', (me && me.color) || '#ff3b6b')
+        talkRing.dataset.state = 'charge'
+        talkRing.hidden = false
+      }, 120)
+    },
+    { capture: true, passive: true },
+  )
+  addEventListener(
+    'pointermove',
+    (e) => {
+      // The finger slides away before the hold counts: it's a scroll, not a note.
+      if (press && !press.talking && e.pointerId === press.id && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) endPress(e)
+    },
+    { capture: true, passive: true },
+  )
+  addEventListener('pointerup', endPress, true)
+  addEventListener('pointercancel', endPress, true)
+  // While talking the page holds still: a scroll would cancel the press and cut the note short.
+  addEventListener('touchmove', (e) => {
+    if (press && press.talking) e.preventDefault()
+  }, { capture: true, passive: false })
+  // A long press would open the page's menu (or the browser's) under the finger, or lift an image to drag it.
+  for (const type of ['contextmenu', 'dragstart', 'selectstart'])
+    addEventListener(type, (e) => {
+      if (press || (touch() && active() && !fromUs(e))) e.preventDefault()
+    }, true)
+  function talkAt(el, x, y) {
+    if (!press) return
+    press.talking = true
+    clearTimeout(press.show)
+    hl.style.display = 'none'
+    const at = noteAt(el, x, y)
+    if (on) setOn(false)
+    writeNote(at, x, y, { talk: true })
+    talkRing.style.left = `${x}px`
+    talkRing.style.top = `${y}px`
+    talkRing.style.setProperty('--pc', (me && me.color) || '#ff3b6b')
+    talkRing.dataset.state = 'rec'
+    // The label sits above the finger, unless that's off the top of the screen.
+    talkRing.toggleAttribute('data-below', y < 110)
+    talkRing.hidden = false
+    // Over the card that just opened.
+    root.append(talkRing)
+    // And the label inside the screen, near an edge too.
+    const label = talkRing.querySelector('b')
+    label.style.translate = ''
+    const lr = label.getBoundingClientRect()
+    const dx = Math.max(0, 8 - lr.left) + Math.min(0, innerWidth - 8 - lr.right)
+    if (dx) label.style.translate = `calc(-50% + ${dx}px) 0`
+    navigator.vibrate?.(15)
+  }
   // In note mode a press on the page is ours: its menus and drags don't start under the note being placed.
   for (const type of ['pointerdown', 'mousedown', 'touchstart'])
     document.addEventListener(
@@ -1648,24 +1838,33 @@
   function releaseTalk() {
     if (!voice) return
     clearTimeout(voice.timer)
-    if (voice.rec) voice.rec.stop()
-    else voice = null
+    if (voice.rec) return voice.rec.stop()
+    const { finish } = voice
+    voice = null
+    finish?.()
   }
 
-  /** `hold`: started by holding ⌥, so letting go of ⌥ ends it and saves what was said. */
-  function startVoice(ta, hold = false) {
+  /**
+   * `hold`: started by holding ⌥ (or a finger), so letting go ends it and saves what was said. `carry`: words
+   * already came, from the recognizer before this one.
+   */
+  function startVoice(ta, hold = false, carry = false) {
     if (!ta.isConnected) return void (voice = null)
+    // Held with a finger on a phone: it goes on until the finger lifts, whatever the recognizer does meanwhile.
+    const finger = hold && touch() && press && press.talking
+    const began = Date.now()
     const rec = new Speech()
     rec.lang = navigator.language || 'en-US'
     rec.continuous = true
     rec.interimResults = true
     voice = { ta, rec, hold, timer: null }
     const mic = ta.parentNode?.querySelector('.mic')
-    const placeholder = ta.placeholder
+    // The box's own placeholder, not the one a recognizer before this one left in it.
+    const placeholder = (ta.dataset.ph ??= ta.placeholder)
     // What was typed stays; what is said goes after it.
     const base = ta.value.trim() ? `${ta.value.trimEnd()} ` : ''
     /** Whether any words came; what went wrong, if something did (null: nothing to say, e.g. aborted). */
-    let spoke = false
+    let spoke = carry
     let failed = false
     let problem = null
     rec.onresult = (e) => {
@@ -1676,9 +1875,12 @@
     }
     rec.onerror = (e) => {
       if (e.error === 'no-speech') return
+      const denied = e.error === 'not-allowed' || e.error === 'service-not-allowed'
+      // With the finger down a hiccup only means the next recognizer takes over.
+      if (finger && !denied) return
       failed = true
       if (e.error === 'aborted') return
-      problem = e.error === 'not-allowed' || e.error === 'service-not-allowed' ? T.micDenied : T.micError(e.error)
+      problem = denied ? T.micDenied : T.micError(e.error)
       // Clicked on: the message stays in the card. Held: it comes as a nudge when ⌥ is let go.
       if (hold) return
       ta.parentNode?.querySelector('.err')?.remove()
@@ -1686,9 +1888,21 @@
     }
     rec.onend = () => {
       if (voice && voice.rec === rec) voice = null
+      // Safari on a phone ends a recognizer by itself now and then: the finger is still down, so listening goes
+      // on with a new one, after what was said so far. Only one that keeps failing at once gives up.
+      if (finger && press && press.talking && ta.isConnected && !problem) {
+        press.quick = Date.now() - began < 400 ? press.quick + 1 : 0
+        if (press.quick <= 8) return void again(ta, spoke)
+      }
+      done()
+    }
+    /** The end of it: saved if held and words came, else the box is left to type in. */
+    const done = () => {
+      // Given up with the finger still down: the ring goes, so it doesn't look like it's still listening.
+      hideRing()
       if (hold && ta.isConnected) {
         // Push to talk: let go and the note is saved as it is (the final words arrive just before this).
-        if (spoke && !failed && ta.submit) return void ta.submit(ta.value.trim())
+        if (spoke && (finger || !failed) && ta.submit) return void ta.submit(ta.value.trim())
         if (!failed || problem) nudge(ta.closest('.card'), problem || T.silent)
       }
       mic?.removeAttribute('data-on')
@@ -1699,12 +1913,34 @@
       }
     }
     mic?.setAttribute('data-on', '')
-    ta.placeholder = T.listening
+    ta.placeholder = hold && touch() ? T.talkHold : T.listening
     try {
       rec.start()
     } catch {
-      voice = null
+      if (voice && voice.rec === rec) voice = null
+      // The last one may still be letting go of the microphone: try again in a moment.
+      if (finger && press && press.talking && ++press.quick <= 8) return void again(ta, spoke, 250)
       mic?.removeAttribute('data-on')
+      hideRing()
+      if (finger) done()
+    }
+  }
+  /** The next recognizer, with the finger still down. Lifted before it starts: what was said is saved. */
+  function again(ta, spoke, wait = 60) {
+    voice = {
+      ta,
+      rec: null,
+      hold: true,
+      timer: setTimeout(() => startVoice(ta, true, spoke), wait),
+      finish: () => {
+        hideRing()
+        if (spoke && ta.isConnected && ta.submit) return void ta.submit(ta.value.trim())
+        if (ta.isConnected) {
+          nudge(ta.closest('.card'), T.silent)
+          ta.placeholder = ta.dataset.ph ?? ta.placeholder
+          ta.focus()
+        }
+      },
     }
   }
 
@@ -1761,7 +1997,8 @@
     return ta
   }
 
-  function writeNote(at, x, y) {
+  /** `talk`: from a press and hold on a phone, dictated with no keyboard until the finger lifts. */
+  function writeNote(at, x, y, { talk = false } = {}) {
     closePanel()
     const close = () => {
       form.remove()
@@ -1794,8 +2031,9 @@
     sendCursor()
     form.style.left = `${Math.max(8, Math.min(x, innerWidth - form.offsetWidth - 8))}px`
     form.style.top = `${Math.max(8, Math.min(y + 18, innerHeight - form.offsetHeight - 8))}px`
-    ta.focus()
     if (touch()) aboveKeyboard(form)
+    if (talk) return startVoice(ta, true)
+    ta.focus()
     // ⌥ + click, and ⌥ still down: keep holding it and talk.
     if (held) holdToTalk(ta)
   }
