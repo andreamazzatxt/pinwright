@@ -344,7 +344,7 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
 
   function forward(req: IncomingMessage, res: ServerResponse, r: Route): void {
     const t = r.target
-    const headers = { ...req.headers, host: t.host, 'accept-encoding': 'identity' }
+    const headers: http.OutgoingHttpHeaders = { ...req.headers, host: t.host, 'accept-encoding': 'identity' }
     // The share token is ours, not the site's.
     const site = (req.headers.cookie ?? '').split(';').filter((c) => !c.trim().startsWith('pw_t=')).join(';').trim()
     if (site) headers.cookie = site
@@ -353,6 +353,14 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
     delete headers['if-modified-since']
     // A guest's page lives on the tunnel; to the dev server it must look like its own.
     if (r.rewrite && headers.origin) headers.origin = t.origin
+    else {
+      // The site builds its own absolute URLs (auth redirects carry one inside redirect_url): it must know the
+      // browser is on pinwright's address, not the dev server's, or the next page lands without the overlay.
+      const o = new URL(publicOrigin(req))
+      headers['x-forwarded-host'] = o.host
+      headers['x-forwarded-proto'] = o.protocol.slice(0, -1)
+      headers['x-forwarded-port'] = o.port || (o.protocol === 'https:' ? '443' : '80')
+    }
     const up = http.request({ host: t.hostname, port: t.port || 80, path: r.path, method: req.method, headers }, (u) => {
       const status = u.statusCode ?? 502
       if (r.fallback && status === 404) {
