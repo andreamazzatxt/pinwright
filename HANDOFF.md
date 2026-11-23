@@ -224,3 +224,10 @@ with a simulated dev server (restart keeps the daemon, last close stops it).
 
 - Dogfooding on a real Astro site is in progress (proxy → `astro dev`).
 - Publishing to npm: only with an explicit yes from the user.
+
+### Releasing
+
+A version tag publishes: `npm version patch -m "%s: what changed"` (commit + tag `v…`), then
+`git push --follow-tags`. `.github/workflows/release.yml` checks the tag against package.json, runs the tests,
+publishes to npm through Trusted Publishing (no token, with provenance; a version already on npm is skipped) and
+makes the GitHub release with the commits since the previous tag. Pushing a tag is publishing: only with the user's yes.
