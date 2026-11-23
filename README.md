@@ -229,7 +229,10 @@ replies, and sees everyone's cursor, each with its own colour and a made-up name
 need a browser.
 
 Click someone's avatar to **Go to** them (their page, scrolled where they are) or **Follow** them: your view keeps
-up with theirs, page changes included, until you scroll yourself or press Esc. On a single-page app the page
+up with theirs, page changes included, and so does any panel they scroll inside the page (an app's `<main>` with its own
+scrollbar). A modal they open opens for you too, and closes with theirs: the click that opened it is replayed
+on your page, unless it also sent something to the server (a Save that then shows a dialog is never repeated). All
+this until you scroll yourself or press Esc. On a single-page app the page
 changes through the site's own router (Next.js, Vue and Nuxt, or the links on the page), so it doesn't reload. In a session your own pointer wears
 your colour, the one the others see, and while someone writes a note the others see a pin in their colour
 where it goes, with dots.

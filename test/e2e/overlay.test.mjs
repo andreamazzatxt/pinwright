@@ -378,6 +378,63 @@ test('Follow: my view keeps up with theirs, across pages, until I scroll myself'
   assert.ok(Math.abs((await a.evaluate(() => scrollY)) - 2500) > 300, 'no longer following')
 })
 
+test('Follow keeps up with a panel they scroll inside the page, not only with the page', async () => {
+  const [a, b] = await twoPeople()
+  // An app layout: the page holds still, a <main> with overflow scrolls.
+  for (const p of [a, b]) {
+    await p.evaluate(() => {
+      const m = Object.assign(document.createElement('main'), { id: 'scroller' })
+      m.style.cssText = 'position:fixed;inset:0;overflow:auto;background:#fff'
+      m.innerHTML = '<div style="height:5000px">long</div>'
+      document.body.append(m)
+    })
+  }
+  await otherChip(a).click()
+  await a.locator('pinwright-root .personcard button', { hasText: 'Follow' }).click()
+  await b.evaluate(() => document.getElementById('scroller').scrollTo(0, 1500))
+  await a.waitForFunction(() => Math.abs(document.getElementById('scroller').scrollTop - 1500) < 50, null, { timeout: 5000 })
+  await b.evaluate(() => document.getElementById('scroller').scrollTo(0, 400))
+  await a.waitForFunction(() => Math.abs(document.getElementById('scroller').scrollTop - 400) < 50, null, { timeout: 5000 })
+  assert.equal(await followFrameShown(a), true, 'still following')
+})
+
+test('Follow opens the modal they open and closes it with them; a click that saves something is never replayed', async () => {
+  const [a, b] = await twoPeople()
+  for (const p of [a, b]) {
+    await p.evaluate(() => {
+      window.__saves = 0
+      const modal = (id) => {
+        const m = Object.assign(document.createElement('div'), { id, role: 'dialog', textContent: 'A modal' })
+        m.setAttribute('aria-modal', 'true')
+        m.style.cssText = 'position:fixed;inset:20%;background:#fff;border:1px solid'
+        document.body.append(m)
+        addEventListener('keydown', function esc(e) {
+          if (e.key === 'Escape') m.remove(), removeEventListener('keydown', esc)
+        })
+      }
+      const btn = (id, text, onclick) => {
+        const x = Object.assign(document.createElement('button'), { id, textContent: text, onclick })
+        x.style.cssText = 'position:fixed;top:10px;left:' + (id === 'open' ? 10 : 120) + 'px;z-index:5'
+        document.body.append(x)
+      }
+      btn('open', 'Details', () => modal('details'))
+      btn('save', 'Save', () => (window.__saves++, fetch('/__saved', { method: 'POST' }).catch(() => {}), modal('saved')))
+    })
+  }
+  await otherChip(a).click()
+  await a.locator('pinwright-root .personcard button', { hasText: 'Follow' }).click()
+  await b.click('#open')
+  await a.waitForSelector('#details', { timeout: 5000 })
+  await b.keyboard.press('Escape')
+  await a.waitForSelector('#details', { state: 'detached', timeout: 5000 })
+  assert.equal(await followFrameShown(a), true, 'closing it does not stop following')
+  await b.click('#save')
+  await b.waitForSelector('#saved')
+  await sleep(1000)
+  assert.equal(await a.evaluate(() => window.__saves), 0, 'their save is not mine')
+  assert.equal(await a.locator('#saved').count(), 0)
+})
+
 test('Follow across a client-side route: the router moves my page too, without reloading it', async () => {
   const [a, b] = await twoPeople()
   await otherChip(a).click()

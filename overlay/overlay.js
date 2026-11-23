@@ -1200,7 +1200,100 @@
       return void navigate(where)
     }
     if (!d || typeof d.sy !== 'number') return
-    scrollTo({ top: Math.max(0, d.sy + (d.vh || innerHeight) / 2 - innerHeight / 2), behavior: smooth ? 'smooth' : 'auto' })
+    toView(d, smooth)
+  }
+
+  /**
+   * Their viewport on my screen, centred: the window's scroll, and the inner panels they scrolled (apps often
+   * scroll a <main> with overflow, not the page, and then scrollY says nothing).
+   */
+  function toView(d, smooth = false) {
+    const behavior = smooth ? 'smooth' : 'auto'
+    scrollTo({ top: Math.max(0, d.sy + (d.vh || innerHeight) / 2 - innerHeight / 2), behavior })
+    for (const [s, top, ch] of d.sc || []) {
+      let el = null
+      try {
+        el = document.querySelector(s)
+      } catch {}
+      if (el && el.scrollHeight > el.clientHeight) el.scrollTo({ top: Math.max(0, top + ch / 2 - el.clientHeight / 2), behavior })
+    }
+    mirrorLayer(d.m ?? null)
+  }
+
+  // --- modals, for whoever follows: the click that opened one goes out, and their page replays it.
+  const LAYER = 'dialog[open],[role=dialog],[role=alertdialog],[aria-modal=true]'
+  const layersOpen = () => [...document.querySelectorAll(LAYER)].filter((el) => !host.contains(el) && el.getClientRects().length).length
+  /** My last click of my own, and my last request that changes data: a click that saved something isn't replayed. */
+  let myClick = null
+  let lastWrite = 0
+  /** What opened the modal I have open, for my followers: the selector of what I clicked. */
+  let opener = null
+  addEventListener(
+    'click',
+    (e) => {
+      if (!e.isTrusted || e.target === host || !(e.target instanceof Element)) return
+      const el = e.target.closest('button,a,summary,[role=button],[role=tab],[role=menuitem],[role=option],[onclick],[tabindex]') || e.target
+      myClick = { sel: sel(el), at: Date.now() }
+    },
+    true,
+  )
+  const wrote = (method) => /^(POST|PUT|PATCH|DELETE)$/i.test(method || 'GET') && (lastWrite = Date.now())
+  const origFetch = window.fetch
+  if (origFetch) {
+    window.fetch = function (input, init) {
+      try {
+        wrote(init?.method || (input instanceof Request ? input.method : 'GET'))
+      } catch {}
+      return origFetch.apply(this, arguments)
+    }
+  }
+  const origOpen = XMLHttpRequest.prototype.open
+  XMLHttpRequest.prototype.open = function (method) {
+    wrote(method)
+    return origOpen.apply(this, arguments)
+  }
+  let layerCount = layersOpen()
+  let layerTick = 0
+  new MutationObserver(() => {
+    if (layerTick) return
+    layerTick = requestAnimationFrame(() => {
+      layerTick = 0
+      const n = layersOpen()
+      if (n === layerCount) return
+      if (n > layerCount && !opener && myClick && Date.now() - myClick.at < 1500 && lastWrite < myClick.at) opener = myClick.sel
+      if (n === 0) opener = null
+      layerCount = n
+      sendCursor()
+    })
+  }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open', 'role', 'aria-modal', 'style', 'class', 'hidden'] })
+
+  /** The modal I opened because they did, and the last opener I tried (not clicked again while it stays the same). */
+  let mirrored = false
+  let tried = null
+  function mirrorLayer(m) {
+    if (!following) return
+    if (m && m !== tried && !layersOpen()) {
+      tried = m
+      let el = null
+      try {
+        el = document.querySelector(m)
+      } catch {}
+      if (el) {
+        el.click()
+        mirrored = true
+      } else console.info('[pinwright] follow: their modal was opened from', m, '- not on this page')
+    } else if (!m) {
+      tried = null
+      if (mirrored && layersOpen()) {
+        mirrored = false
+        // Closed the way a person would, never by clicking in it (its buttons may save or delete).
+        const t = document.activeElement && document.activeElement !== document.body ? document.activeElement : document
+        t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true, cancelable: true }))
+        setTimeout(() => {
+          for (const dlg of document.querySelectorAll('dialog[open]')) if (!host.contains(dlg)) dlg.close()
+        }, 300)
+      } else if (!layersOpen()) mirrored = false
+    }
   }
 
   /** Where catching up is taking me, to scroll there once the page has changed under the router. */
@@ -1318,7 +1411,7 @@
     const go = JSON.parse(sessionStorage.getItem('pw-goto') || 'null')
     sessionStorage.removeItem('pw-goto')
     if (go && go.path === page) {
-      const there = () => scrollTo(0, Math.max(0, go.d.sy + (go.d.vh || innerHeight) / 2 - innerHeight / 2))
+      const there = () => toView(go.d)
       document.readyState === 'complete' ? there() : addEventListener('load', there)
       setTimeout(there, 300)
     }
@@ -1432,6 +1525,9 @@
   function cursorPayload(hidden) {
     // sy, vh: where my viewport is, for whoever follows me.
     const view = { sy: scrollY, vh: innerHeight }
+    const sc = scrolled()
+    if (sc.length) view.sc = sc
+    if (opener) view.m = opener
     if (writing) view.w = writing.at
     if (hidden || !lastPointer) return { pid, page, hidden: true, ...view }
     const { x, y } = lastPointer
@@ -1460,8 +1556,29 @@
     else if (!writing) return
     sendCursor()
   }, 3000)
-  // Followers keep up with my scroll too, not only my pointer.
-  addEventListener('scroll', () => sendCursor(), { passive: true })
+  /** The inner panels I scrolled lately, most recent first: followers scroll the same ones. */
+  let scrollers = []
+  function scrolled() {
+    scrollers = scrollers.filter((el) => el.isConnected)
+    const out = []
+    for (const el of scrollers) {
+      const s = sel(el)
+      if (s) out.push([s, Math.round(el.scrollTop), el.clientHeight])
+    }
+    return out
+  }
+  // Followers keep up with my scroll too, not only my pointer: the page's, and any panel's (capture: theirs don't bubble).
+  addEventListener(
+    'scroll',
+    (e) => {
+      const el = e.target
+      if (el instanceof Element && el !== host && el !== document.documentElement && el !== document.body) {
+        scrollers = [el, ...scrollers.filter((x) => x !== el)].slice(0, 4)
+      }
+      sendCursor()
+    },
+    { passive: true, capture: true },
+  )
   addEventListener(
     'pointermove',
     (e) => {
@@ -1768,6 +1885,7 @@
       return setOn(!on)
     }
     if (e.key === 'Escape') {
+      if (!e.isTrusted) return
       if (following && !root.querySelector('.form')) return void unfollow()
       const open = root.querySelector('.form') || panelId || isOpen
       closeAll()
@@ -2460,7 +2578,6 @@
 
   addEventListener('resize', () => (place(), placeCursors()))
   addEventListener('scroll', () => requestAnimationFrame(placeCursors), { passive: true, capture: true })
-  addEventListener('scroll', () => sendCursor(), { passive: true })
   addEventListener('scroll', () => requestAnimationFrame(place), { passive: true, capture: true })
   addEventListener('load', place)
   setInterval(place, 1000)
@@ -2481,7 +2598,7 @@
       try {
         sessionStorage.removeItem('pw-goto')
       } catch {}
-      const there = () => scrollTo(0, Math.max(0, g.sy + (g.vh || innerHeight) / 2 - innerHeight / 2))
+      const there = () => toView(g)
       setTimeout(there, 80)
       setTimeout(there, 600)
     }
