@@ -1,6 +1,7 @@
 import type { Server } from 'node:http'
+import net from 'node:net'
 import { Bus } from './bus.js'
-import { Collab } from './collab.js'
+import { Collab, GUEST, type GuestSocket } from './collab.js'
 import { loadConfig, type Config, type Options } from './config.js'
 import type { Ctx } from './context.js'
 import { openDb } from './db.js'
@@ -45,6 +46,19 @@ export async function startPinwright(opts: Options = {}): Promise<Pinwright> {
     db.close()
     throw e
   }
+  // Tunnels come in on their own port: what arrives there is a guest, whatever a proxy did to its headers.
+  const guests = net.createServer((socket) => {
+    ;(socket as GuestSocket)[GUEST] = () => collab.url ?? ''
+    server.emit('connection', socket)
+  })
+  try {
+    await listen(guests as unknown as Server, cfg.guestPort ?? 0, '127.0.0.1', 'guestPort')
+    collab.guestPort = (guests.address() as net.AddressInfo).port
+  } catch (e) {
+    server.close()
+    db.close()
+    throw e
+  }
   scheduler.start()
   const url = `http://${cfg.host.includes(':') ? `[${cfg.host}]` : cfg.host}:${cfg.port}`
   cfg.log(`listening on ${url}${cfg.target ? ` → ${cfg.target}` : ''} (root ${cfg.root}, ${cfg.maxAgents} agents, ${cfg.models.worker})`)
@@ -61,6 +75,7 @@ export async function startPinwright(opts: Options = {}): Promise<Pinwright> {
       stopped ??= (async () => {
         await collab.unshare()
         await scheduler.stop()
+        guests.close()
         await new Promise<void>((ok) => {
           server.close(() => ok())
           server.closeAllConnections()
@@ -73,10 +88,10 @@ export async function startPinwright(opts: Options = {}): Promise<Pinwright> {
   }
 }
 
-function listen(server: Server, port: number, host: string): Promise<void> {
+function listen(server: Server, port: number, host: string, setting = 'port'): Promise<void> {
   return new Promise((ok, fail) => {
     const onErr = (e: NodeJS.ErrnoException) => {
-      fail(e.code === 'EADDRINUSE' ? new Error(`port ${port} is busy: is pinwright already running? Set another with --port or \`port\` in the config.`) : e)
+      fail(e.code === 'EADDRINUSE' ? new Error(setting === 'port' ? `port ${port} is busy: is pinwright already running? Set another with --port or \`port\` in the config.` : `guest port ${port} is busy: set another with --guest-port or \`guestPort\` in the config.`) : e)
     }
     server.once('error', onErr)
     server.listen(port, host, () => {

@@ -4,7 +4,7 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http'
 import net from 'node:net'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { isRemote, LINK_KINDS, publicOrigin as originOf, type Access, type Collab } from './collab.js'
+import { guestOrigin, isRemote, LINK_KINDS, publicOrigin as originOf, type Access, type Collab } from './collab.js'
 import type { Ctx } from './context.js'
 import { acceptWs, type WsConn } from './ws.js'
 import { OpError, type Ops } from './ops.js'
@@ -416,6 +416,11 @@ export function createServer(ctx: Ctx, ops: Ops, scheduler: Scheduler, collab: C
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x')
+    // Going live on the user's server: this request, sent to the public address, came back through their server.
+    if (url.pathname === '/__pw/probe' && collab.probe && url.searchParams.get('n') === collab.probe && guestOrigin(req) !== undefined) {
+      res.writeHead(204, { 'x-pinwright': 'probe', 'cache-control': 'no-store' })
+      return void res.end()
+    }
     // Remote visitors (the shared link) need the token: from the link once, then from its cookie.
     const auth = collab.authorized(req, url.searchParams)
     if (auth === 'denied') {

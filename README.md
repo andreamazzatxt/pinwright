@@ -264,11 +264,38 @@ cloudflared tunnel route dns review review.example.com # once
 npx pinwright --tunnel review --hostname review.example.com
 ```
 
-or any tunnel you run yourself to pinwright's port, which pinwright leaves alone and only builds the links on:
+or any tunnel you run yourself, which pinwright leaves alone and only builds the links on. Point it at the guest
+port (`--guest-port`): whatever arrives there counts as a guest and needs the token, however the proxy in front
+sets its headers.
 
 ```sh
-npx pinwright --public-url https://review.example.com
+npx pinwright --public-url https://review.example.com --guest-port 4399   # your tunnel → 127.0.0.1:4399
 ```
+
+**Your own server.** An extra option for whoever wants full control over the path the share takes. Go live opens
+a reverse SSH tunnel to a server of yours (any machine you reach over SSH with a key) and closes it on **Stop**;
+the address, its certificate and anything you want in front of it (an IP allowlist, your SSO) are then yours to
+set. Once, on the server, a web server for the name, e.g. [Caddy](https://caddyserver.com), which gets the
+certificate by itself:
+
+```
+review.example.com {
+  reverse_proxy 127.0.0.1:9000
+}
+```
+
+Then:
+
+```sh
+npx pinwright --ssh me@my-server --hostname review.example.com   # --ssh-port if not 9000
+```
+
+The share counts as up once a request to `https://review.example.com` comes back to pinwright, so a server that
+isn't ready yet shows at once. The SSH login must not ask anything (a key or the SSH agent).
+
+If the web server runs in Docker (Coolify's Traefik, for one), it can't reach the server's 127.0.0.1: have the tunnel
+listen on the Docker network's gateway with `--ssh-bind 10.0.1.1` (allowed by `GatewayPorts clientspecified` in
+the server's sshd config) and point the web server at that address.
 
 The token in the links is what keeps the share private: **Stop** voids it, even while your tunnel stays up. Both
 work with `--mfe`: the same address serves the shell and the remote.
@@ -318,8 +345,10 @@ export default {
   instructions: '',                  // appended to the agent's system prompt
   guestDirs: ['src', 'public'],      // folder names guest notes may edit under (default: common source/asset dirs)
   cloudflared: '/path/to/cloudflared',
-  publicUrl: 'https://review.example.com', // Go live on your own tunnel to this port; none is opened
+  publicUrl: 'https://review.example.com', // Go live on your own tunnel; none is opened
+  guestPort: 4399,                   // where tunnels reach pinwright (default: a free port)
   tunnel: 'review', hostname: 'review.example.com', // or your named Cloudflare tunnel, started by pinwright
+  ssh: 'me@my-server', sshPort: 9000, // or your own server: a reverse SSH tunnel, with hostname as above
   onShare: './scripts/allow-redirect.sh',   // run when a share opens (URL in PINWRIGHT_URL), or a function
   onUnshare: './scripts/drop-redirect.sh',  // and when it closes
   useApiKey: false,                  // use ANTHROPIC_API_KEY instead of `claude login`
@@ -333,8 +362,9 @@ pinwright                          ask how to start (in a terminal), or run the 
 pinwright -- <command>             same, with your own dev command
 pinwright --target <url>           review a site that is already running
 pinwright --mfe --scope <css>      a microfrontend, reviewed inside its shell (see Microfrontends)
-pinwright --public-url <url>       Go live on your own fixed tunnel to pinwright's port
+pinwright --public-url <url>       Go live on your own fixed tunnel (to --guest-port)
 pinwright --tunnel <name> --hostname <host>   Go live through your named Cloudflare tunnel
+pinwright --ssh <user@host> --hostname <host> Go live through your own server, over a reverse SSH tunnel
 pinwright list [--all]             notes in the running daemon
 pinwright take <id>                mark a note taken and print a prompt for an interactive session
 pinwright done <id> [summary]      close a note you handled by hand

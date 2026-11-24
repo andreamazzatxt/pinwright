@@ -225,6 +225,14 @@ with a simulated dev server (restart keeps the daemon, last close stops it).
 - Dogfooding on a real Astro site is in progress (proxy → `astro dev`).
 - Publishing to npm: only with an explicit yes from the user.
 
+### Own server for Go live (2026-11-24)
+
+Opt-in: the default stays the Cloudflare quick tunnel (works at once). `--ssh user@host --hostname <name>` opens
+`ssh -N -R 127.0.0.1:<sshPort>:127.0.0.1:<guestPort>` (BatchMode: key or agent only) and the share counts as up once
+`https://<name>/__pw/probe?n=<nonce>` comes back through the guest port (204). Every tunnel (cloudflared too) now
+reaches the daemon on a separate 127.0.0.1 guest port: sockets accepted there are guests whatever their headers,
+so a proxy that rewrites Host and adds no X-Forwarded-For (nginx defaults) can't make a guest look like the host.
+
 ### Releasing
 
 A version tag publishes: `npm version patch -m "%s: what changed"` (commit + tag `v…`), then

@@ -53,8 +53,9 @@ export interface Config {
    */
   shell?: string
   /**
-   * Go live on a fixed address you run yourself (a Cloudflare tunnel, or any other), pointed at
-   * pinwright's port: no tunnel is opened, the links are built on it. For sites whose login only accepts known hosts.
+   * Go live on a fixed address you run yourself (a Cloudflare tunnel, or any other): no tunnel is opened, the links
+   * are built on it. Point your tunnel at `guestPort`, where everything counts as a guest whatever its headers; on
+   * pinwright's own port it counts only if your proxy keeps the Host or adds X-Forwarded-For.
    */
   publicUrl?: string
   /**
@@ -63,7 +64,26 @@ export interface Config {
    * every time.
    */
   tunnel?: string
+  /** With `tunnel` or `ssh`: the public hostname, e.g. review.example.com. */
   hostname?: string
+  /**
+   * Go live through your own server, for full control over the path: pinwright opens a reverse SSH tunnel to `ssh`
+   * (user@server, logging in with a key or the agent) from `sshPort` there (default 9000), and your server's web
+   * server serves `hostname` over HTTPS from that port.
+   */
+  ssh?: string
+  sshPort?: number
+  /**
+   * With `ssh`: the address on your server the tunnel listens on. Default 127.0.0.1; a web server in Docker
+   * (Coolify's Traefik, say) can't reach that, so give it the Docker network's gateway (e.g. 10.0.1.1), which needs
+   * `GatewayPorts clientspecified` in the server's sshd config.
+   */
+  sshBind?: string
+  /**
+   * Where tunnels reach pinwright, on 127.0.0.1 only: everything arriving there is a guest and needs the token.
+   * Default: a free port; set one for your own tunnel (`publicUrl`) to point at.
+   */
+  guestPort?: number
   /**
    * Run when a share opens, and when it closes: a shell command (the public URL in PINWRIGHT_URL) or, in a JS
    * config, a function of the URL. For setup outside pinwright, e.g. allowing the URL as a login redirect.

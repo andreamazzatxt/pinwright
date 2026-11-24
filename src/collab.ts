@@ -1,3 +1,4 @@
+import type net from 'node:net'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
@@ -40,13 +41,24 @@ export function isLocalHost(host: string | undefined): boolean {
  * that adds no header, and a site that points its own name at 127.0.0.1 (DNS rebinding): both need the token.
  */
 export function isRemote(req: IncomingMessage): boolean {
+  if (guestOrigin(req) !== undefined) return true
   const a = req.socket.remoteAddress ?? ''
   const loopback = a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1'
   return !loopback || Boolean(req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for']) || !isLocalHost(req.headers.host)
 }
 
-/** The origin the browser used to reach the daemon: the public URL's when it names that host, else from the headers. */
+/**
+ * Sockets accepted on the guest port carry this: a way to the share's public origin ('' while there's none), read
+ * per request since a connection outlives a share. Whatever a proxy in front does to the headers, it's a guest.
+ */
+export const GUEST = Symbol('pinwright guest')
+export type GuestSocket = net.Socket & { [GUEST]?: () => string }
+export const guestOrigin = (req: IncomingMessage): string | undefined => (req.socket as GuestSocket)[GUEST]?.()
+
+/** The origin the browser used to reach the daemon: the share's for a guest, the public URL's when it names that host, else from the headers. */
 export function publicOrigin(req: IncomingMessage, cfg: Pick<Config, 'publicUrl'>): string {
+  const g = guestOrigin(req)
+  if (g) return g
   const host = req.headers.host ?? 'localhost'
   if (cfg.publicUrl) {
     const pub = new URL(cfg.publicUrl)
@@ -75,6 +87,10 @@ export class Collab {
   private tokens: Record<'auto' | 'review', string> | null = null
   private tunnel: ChildProcess | null = null
   url: string | null = null
+  /** Where tunnels reach the daemon (set once it listens there). */
+  guestPort = 0
+  /** A one-off code: a request carrying it proves the user's server reaches us. */
+  probe: string | null = null
 
   constructor(private cfg: Config) {}
 
@@ -170,6 +186,7 @@ export class Collab {
    * Opens the tunnel (once) and returns the public base URL; the caller adds the page and a token.
    * - publicUrl: nothing opens, the tunnel is the user's; only the tokens make the links.
    * - tunnel + hostname: the user's named Cloudflare tunnel, its hostname already routed to it.
+   * - ssh + hostname: a reverse SSH tunnel to the user's own server, whose web server serves the hostname.
    * - otherwise a Cloudflare quick tunnel, on a new random host each time.
    */
   async share(): Promise<{ url: string; tokens: Record<'auto' | 'review', string> }> {
@@ -178,15 +195,21 @@ export class Collab {
     const tokens = this.tokens
     if (this.cfg.publicUrl) {
       this.url = new URL(this.cfg.publicUrl).origin
-      if (this.announced !== this.url) this.cfg.log(`sharing at ${this.url} (your tunnel)`)
+      if (this.announced !== this.url) this.cfg.log(`sharing at ${this.url} (your tunnel, to 127.0.0.1:${this.guestPort})`)
       await this.announce()
       return { url: this.url, tokens }
     }
     if (this.url && this.tunnel && this.tunnel.exitCode === null) return { url: this.url, tokens }
+    if (this.cfg.ssh) {
+      this.url = await this.openSsh()
+      this.cfg.log(`sharing at ${this.url} (through ${this.cfg.ssh})`)
+      await this.announce()
+      return { url: this.url, tokens }
+    }
     const { tunnel: named, hostname } = this.cfg
     if (named && !hostname) throw new Error('a named tunnel needs its hostname (--hostname), the one routed to it')
     const bin = await resolveCloudflared({ configured: this.cfg.cloudflared, log: this.cfg.log })
-    const local = `http://127.0.0.1:${this.cfg.port}`
+    const local = `http://127.0.0.1:${this.guestPort || this.cfg.port}`
     // A quick tunnel prints its URL; a named one says when it's connected, and its URL is the hostname.
     const [args, ready] = named
       ? [['tunnel', '--no-autoupdate', 'run', '--url', local, named], /Registered tunnel connection/]
@@ -227,6 +250,49 @@ export class Collab {
     this.cfg.log(`sharing at ${this.url}`)
     await this.announce()
     return { url: this.url, tokens }
+  }
+
+  /**
+   * `ssh -R`: the server's sshPort (its loopback only) leads to our guest port. ssh says nothing once it's up, so it's
+   * up when a request sent to the public hostname comes back to us: that also proves the server's web server.
+   */
+  private async openSsh(): Promise<string> {
+    const { ssh, hostname } = this.cfg
+    if (!hostname) throw new Error('--ssh needs --hostname: the address your server serves pinwright on')
+    // https unless spelled out (a plain-http address is for trying it on a LAN, or tests).
+    const url = /^https?:\/\//.test(hostname) ? new URL(hostname).origin : `https://${hostname.replace(/\/.*$/, '')}`
+    const remote = this.cfg.sshPort ?? 9000
+    const args = ['-N', '-T', '-o', 'BatchMode=yes', '-o', 'ExitOnForwardFailure=yes', '-o', 'ServerAliveInterval=20', '-o', 'ServerAliveCountMax=3', '-R', `${this.cfg.sshBind ?? '127.0.0.1'}:${remote}:127.0.0.1:${this.guestPort}`, ssh!]
+    let out = ''
+    const p = spawn('ssh', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    this.tunnel = p
+    let exited: Error | null = null
+    p.stderr?.on('data', (b: Buffer) => (out = (out + b.toString()).slice(-2000)))
+    p.on('error', (e: NodeJS.ErrnoException) => (exited = e.code === 'ENOENT' ? new Error('ssh not found: install OpenSSH') : e))
+    p.on('exit', () => {
+      exited ??= new Error(`ssh to ${ssh} closed: ${out.trim().split('\n').slice(-2).join(' ') || 'no reason given'}`)
+      if (this.tunnel === p) {
+        this.tunnel = null
+        this.url = null
+      }
+    })
+    this.probe = randomBytes(12).toString('base64url')
+    try {
+      for (const until = Date.now() + 30_000; Date.now() < until; ) {
+        if (exited) throw exited
+        const ok = await fetch(`${url}/__pw/probe?n=${this.probe}`, { signal: AbortSignal.timeout(3000), redirect: 'manual' })
+          .then((r) => r.status === 204 && r.headers.get('x-pinwright') === 'probe')
+          .catch(() => false)
+        if (ok) return url
+        await new Promise((r) => setTimeout(r, 700))
+      }
+      throw new Error(`${url} doesn't lead to pinwright: on ${ssh!.replace(/^.*@/, '')}, serve it from 127.0.0.1:${remote} (Caddy: reverse_proxy ${this.cfg.sshBind ?? '127.0.0.1'}:${remote})`)
+    } catch (e) {
+      p.kill('SIGTERM')
+      throw exited ?? e
+    } finally {
+      this.probe = null
+    }
   }
 
   /** The URL onShare was last told about: it hears about each new one once. */

@@ -30,7 +30,11 @@ Options:
   --shell <url>      with --mfe: the shell page to open, and the one Go live shares
   --public-url <url> Go live on a fixed tunnel you run to this port: none is opened
   --tunnel <name>    Go live through your named Cloudflare tunnel instead of a quick one
-  --hostname <host>  with --tunnel: the hostname routed to it, e.g. review.example.com
+  --hostname <host>  with --tunnel or --ssh: the public hostname, e.g. review.example.com
+  --ssh <user@host>  Go live through your own server, over a reverse SSH tunnel
+  --ssh-port <n>     with --ssh: the port on your server its web server forwards to (default 9000)
+  --ssh-bind <addr>  with --ssh: the address on your server it listens on (default 127.0.0.1)
+  --guest-port <n>   where tunnels reach pinwright, for your own tunnel to point at (default: a free one)
   --root <dir>       project root (default: cwd)
   --rebuild <cmd>    command to run after edits (sites without HMR)
   --agents <n>       max parallel agents (default 3)
@@ -56,6 +60,10 @@ const { values: v, positionals } = parseArgs({
     'public-url': { type: 'string' },
     tunnel: { type: 'string' },
     hostname: { type: 'string' },
+    ssh: { type: 'string' },
+    'ssh-port': { type: 'string' },
+    'ssh-bind': { type: 'string' },
+    'guest-port': { type: 'string' },
     target: { type: 'string' },
     port: { type: 'string' },
     root: { type: 'string' },
@@ -172,6 +180,10 @@ async function start(): Promise<void> {
     publicUrl: v['public-url'],
     tunnel: v.tunnel,
     hostname: v.hostname,
+    ssh: v.ssh,
+    sshPort: num(v['ssh-port']),
+    sshBind: v['ssh-bind'],
+    guestPort: num(v['guest-port']),
     rebuild: v.rebuild,
     maxAgents: num(v.agents),
     models: v.model ? { worker: v.model } : undefined,
